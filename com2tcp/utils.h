@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005 Vyacheslav Frolov
+ * Copyright (c) 2005-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,17 @@
  *
  *
  * $Log$
+ * Revision 1.4  2005/10/03 13:44:17  vfrolov
+ * Added Clean() method
+ *
+ * Revision 1.3  2005/06/10 15:55:10  vfrolov
+ * Implemented --terminal option
+ *
  * Revision 1.2  2005/06/08 07:40:23  vfrolov
  * Added missing DataStream::busy initialization
  *
  * Revision 1.1  2005/06/06 15:19:02  vfrolov
  * Initial revision
- *
  *
  */
 
@@ -79,8 +84,6 @@ class DataStream
     int GetData(void *pBuf, int count);
     void PutEof() { eof = TRUE; }
     BOOL isFull() const { return threshold && threshold < busy; }
-
-  protected:
     void Clean();
 
   private:
@@ -108,10 +111,44 @@ class Protocol
     void WriteEof() { streamWriteRecv.PutEof(); }
     BOOL isWriteFull() const { return streamWriteRecv.isFull(); }
     int Recv(void *pBuf, int count) { return streamWriteRecv.GetData(pBuf, count); }
+    virtual void Clean();
 
   private:
     DataStream streamSendRead;
     DataStream streamWriteRecv;
+};
+///////////////////////////////////////////////////////////////
+class ComParams
+{
+  public:
+    ComParams();
+
+    void SetBaudRate(const char *pBaudRate) { baudRate = atol(pBaudRate); }
+    void SetByteSize(const char *pByteSize) { byteSize = atoi(pByteSize); }
+    BOOL SetParity(const char *pParity);
+    BOOL SetStopBits(const char *pStopBits);
+    void SetIgnoreDSR(BOOL val) { ignoreDSR = val; }
+
+    static const char *ParityStr(int parity);
+    static const char *StopBitsStr(int stopBits);
+
+    static const char *BaudRateLst();
+    static const char *ByteSizeLst();
+    static const char *ParityLst();
+    static const char *StopBitsLst();
+
+    long BaudRate() const { return baudRate; }
+    int ByteSize() const { return byteSize; }
+    int Parity() const { return parity; }
+    int StopBits() const { return stopBits; }
+    BOOL IgnoreDSR() const { return ignoreDSR; }
+
+  private:
+    long baudRate;
+    int byteSize;
+    int parity;
+    int stopBits;
+    BOOL ignoreDSR;
 };
 ///////////////////////////////////////////////////////////////
 
