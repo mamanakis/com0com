@@ -19,9 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.4  2005/05/13 16:58:03  vfrolov
- * Implemented IOCTL_SERIAL_LSRMST_INSERT
- *
  * Revision 1.3  2005/02/28 12:10:08  vfrolov
  * Log skipped lines to trace file (was to syslog)
  * Fixed missing trace file close
@@ -520,13 +517,13 @@ PCHAR AnsiStrCopyDump(
     PCHAR pDestStr,
     PSIZE_T pSize,
     IN PVOID pData,
-    IN SIZE_T length)
+    IN ULONG length)
 {
 #define DUMP_MAX 16
   CHAR bufA[DUMP_MAX + 1];
-  SIZE_T i;
+  ULONG i;
 
-  pDestStr = AnsiStrFormat(pDestStr, pSize, "%lu:", (ULONG)length);
+  pDestStr = AnsiStrFormat(pDestStr, pSize, "%lu:", length);
 
   for (i = 0 ; i < length && i < DUMP_MAX ; i++) {
     UCHAR c = *(((PUCHAR)pData) + i);
@@ -749,7 +746,7 @@ VOID TraceOutput(
       pDestStr = AnsiStrCopyStr(pDestStr, &size, " ...\r\n");
     }
 
-    InterlockedExchange(&strOldFreeInd, (LONG)(sizeof(strOld) - size));
+    InterlockedExchange(&strOldFreeInd, sizeof(strOld) - size);
 
     KeReleaseSpinLock(&strOldLock, oldIrql);
 
@@ -801,7 +798,7 @@ VOID TraceOutput(
             lenBuf = size - 1;
           RtlCopyMemory(pDestStr, &strOld[strOldBusyInd], lenBuf);
           pDestStr[lenBuf] = 0;
-          strOldBusyInd += (LONG)lenBuf;
+          strOldBusyInd += lenBuf;
           ASSERT(strOldBusyInd <= strOldFreeInd);
           if (strOldBusyInd == strOldFreeInd)
             InterlockedExchange(&strOldFreeInd, strOldBusyInd = 0);
@@ -1004,8 +1001,7 @@ VOID TraceIrp(
   PIO_STACK_LOCATION pIrpStack;
   PC0C_COMMON_EXTENSION pDevExt;
   PVOID pSysBuf;
-  ULONG_PTR inform;
-  ULONG major;
+  ULONG inform, major;
 
   if (!TRACE_FILE_OK)
     return;

@@ -19,9 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.4  2005/05/14 17:07:02  vfrolov
- * Implemented SERIAL_LSRMST_MST insertion
- *
  * Revision 1.3  2005/05/13 16:58:03  vfrolov
  * Implemented IOCTL_SERIAL_LSRMST_INSERT
  *
@@ -168,7 +165,7 @@ NTSTATUS FdoPortIoCtl(
 
       KeAcquireSpinLock(pDevExt->pIoLock, &oldIrql);
       RtlZeroMemory(pSysBuf, sizeof(*pSysBuf));
-      pSysBuf->AmountInInQueue = (ULONG)pDevExt->pIoPortLocal->readBuf.busy;
+      pSysBuf->AmountInInQueue = pDevExt->pIoPortLocal->readBuf.busy;
       KeReleaseSpinLock(pDevExt->pIoLock, oldIrql);
       pIrp->IoStatus.Information = sizeof(SERIAL_STATUS);
 
@@ -425,7 +422,7 @@ NTSTATUS FdoPortIoCtl(
 
       pSysBuf->CurrentTxQueue = 0;
       pSysBuf->CurrentRxQueue =
-        (ULONG)(pDevExt->pIoPortLocal->readBuf.pEnd - pDevExt->pIoPortLocal->readBuf.pBase);
+        pDevExt->pIoPortLocal->readBuf.pEnd - pDevExt->pIoPortLocal->readBuf.pBase;
 
       pIrp->IoStatus.Information = sizeof(SERIAL_COMMPROP);
       break;
@@ -474,7 +471,7 @@ NTSTATUS FdoPortIoCtl(
 
       if (pReadBuf->pBase) {
         while (pReadBuf->busy) {
-          SIZE_T length;
+          ULONG length;
 
           length = pReadBuf->pFree <= pReadBuf->pBusy ?
               pReadBuf->pEnd - pReadBuf->pBusy : pReadBuf->busy;
