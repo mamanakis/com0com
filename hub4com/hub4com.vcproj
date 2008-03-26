@@ -178,23 +178,43 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
+				RelativePath=".\bufutils.h"
+				>
+			</File>
+			<File
 				RelativePath=".\comhub.h"
 				>
 			</File>
 			<File
-				RelativePath=".\comio.h"
+				RelativePath=".\export.h"
 				>
 			</File>
 			<File
-				RelativePath=".\comparams.h"
+				RelativePath=".\filters.h"
 				>
 			</File>
 			<File
-				RelativePath=".\comport.h"
+				RelativePath=".\hubmsg.h"
+				>
+			</File>
+			<File
+				RelativePath=".\plugins.h"
+				>
+			</File>
+			<File
+				RelativePath=".\plugins\plugins_api.h"
+				>
+			</File>
+			<File
+				RelativePath=".\port.h"
 				>
 			</File>
 			<File
 				RelativePath=".\precomp.h"
+				>
+			</File>
+			<File
+				RelativePath=".\route.h"
 				>
 			</File>
 			<File
@@ -226,19 +246,27 @@
 				>
 			</File>
 			<File
-				RelativePath=".\comio.cpp"
+				RelativePath=".\export.cpp"
 				>
 			</File>
 			<File
-				RelativePath=".\comparams.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\comport.cpp"
+				RelativePath=".\filters.cpp"
 				>
 			</File>
 			<File
 				RelativePath=".\hub4com.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\hubmsg.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\plugins.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\port.cpp"
 				>
 			</File>
 			<File
@@ -260,6 +288,10 @@
 						UsePrecompiledHeader="1"
 					/>
 				</FileConfiguration>
+			</File>
+			<File
+				RelativePath=".\route.cpp"
+				>
 			</File>
 			<File
 				RelativePath=".\utils.cpp"
