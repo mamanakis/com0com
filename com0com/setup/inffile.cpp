@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2009 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.6  2008/04/02 10:30:26  vfrolov
- * Added check pointer for null
- *
- * Revision 1.5  2007/09/20 12:39:59  vfrolov
- * Added SetLastError(ERROR_NOT_ENOUGH_MEMORY)
- *
  * Revision 1.4  2007/06/15 09:45:50  vfrolov
  * Increased list size for SetupGetInfFileList()
  *
@@ -36,6 +30,7 @@
  *
  * Revision 1.1  2006/07/28 12:16:43  vfrolov
  * Initial revision
+ *
  *
  */
 
@@ -118,11 +113,6 @@ static BOOL GetFilePath(
 
   if (res >= lenFilePath) {
     ShowError(MB_OK|MB_ICONSTOP, ERROR_BUFFER_OVERFLOW, "GetFullPathName(%s)", pNearPath);
-    return FALSE;
-  }
-
-  if (!pBuf) {
-    ShowError(MB_OK|MB_ICONSTOP, ERROR_INVALID_NAME, "GetFullPathName(%s)", pNearPath);
     return FALSE;
   }
 
@@ -501,10 +491,7 @@ BOOL InfFile::UninstallAllInfFiles(
       InfFile infFile(infPath, NULL);
 
       if (infFile.Compare(_pClassGUID, _pClass, _pProvider, FALSE)) {
-        int res;
-
-        if (!Silent()) {
-          res = ShowMsg(MB_YESNO,
+        if (ShowMsg(MB_YESNO,
             "The file %s possible should be deleted too.\n"
             "\n"
             "%s:\n"
@@ -517,21 +504,8 @@ BOOL InfFile::UninstallAllInfFiles(
             infFile.Path(),
             infFile.ClassGUID(FALSE),
             infFile.Class(FALSE),
-            infFile.Provider(FALSE));
-        } else {
-          Trace("\nThe file %s possible should be deleted too\n"
-                "  ClassGUID = %s\n"
-                "  Class = %s\n"
-                "  Provider = %s\n",
-                infFile.Path(),
-                infFile.ClassGUID(FALSE),
-                infFile.Class(FALSE),
-                infFile.Provider(FALSE));
-
-          res = IDNO;
-        }
-
-        if (res == IDYES) {
+            infFile.Provider(FALSE)) == IDYES)
+        {
           Trace("\n");
           UninstallInf(infFile.Path());
         }

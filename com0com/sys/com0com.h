@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2008 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,31 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.46  2008/09/17 07:58:32  vfrolov
- * Added AddRTTO and AddRITO parameters
- *
- * Revision 1.45  2008/07/11 10:38:00  vfrolov
- * Added nonstandard ability to enable LSR insertion on BREAK OFF
- *
- * Revision 1.44  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.43  2008/05/04 09:51:45  vfrolov
- * Implemented HiddenMode option
- *
- * Revision 1.42  2008/04/08 10:27:44  vfrolov
- * Fixed C0C_MCR_MASK
- *
- * Revision 1.41  2008/04/08 06:47:37  vfrolov
- * Added pin OUT2
- *
- * Revision 1.40  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
- * Revision 1.39  2007/11/23 08:30:50  vfrolov
- * Increased size of TX buffer to typical default for Windows
- *
  * Revision 1.38  2007/09/17 14:31:06  vfrolov
  * Implemented pseudo pin OPEN
  *
@@ -215,7 +190,7 @@ typedef struct _C0C_IRP_QUEUE {
 
 typedef struct _C0C_RAW_DATA {
   UCHAR                   size;
-  UCHAR                   data[3 + sizeof(ULONG)];
+  UCHAR                   data[7];
 } C0C_RAW_DATA, *PC0C_RAW_DATA;
 
 typedef struct _C0C_BUFFER {
@@ -226,6 +201,7 @@ typedef struct _C0C_BUFFER {
   SIZE_T                  busy;
   SIZE_T                  limit;
   SIZE_T                  size80;
+  BOOLEAN                 escape;
   C0C_RAW_DATA            insertData;
 } C0C_BUFFER, *PC0C_BUFFER;
 
@@ -244,8 +220,8 @@ typedef struct _C0C_TX_BUFFER {
   UCHAR                   leastBuf[14 + 1];  /* transmitter holding and shift registers */
 } C0C_TX_BUFFER, *PC0C_TX_BUFFER;
 
-#define C0C_TX_BUFFER_EMPTY(pTxBuf) \
-  (!(pTxBuf)->busy)
+#define C0C_TX_BUFFER_BUSY(pTxBuf) \
+  ((pTxBuf)->busy)
 
 #define C0C_TX_BUFFER_THR_EMPTY(pTxBuf) \
   ((pTxBuf)->busy <= 1)
@@ -282,12 +258,10 @@ typedef struct _C0C_IO_PORT {
 
   KTIMER                  timerReadTotal;
   KDPC                    timerReadTotalDpc;
-  ULONG                   addRTTO;
 
   KTIMER                  timerReadInterval;
   KDPC                    timerReadIntervalDpc;
   LARGE_INTEGER           timeoutInterval;
-  ULONG                   addRITO;
 
   KTIMER                  timerWriteTotal;
   KDPC                    timerWriteTotalDpc;
@@ -295,19 +269,14 @@ typedef struct _C0C_IO_PORT {
   KTIMER                  timerClose;
   KDPC                    timerCloseDpc;
 
-  SERIAL_BAUD_RATE        baudRate;
-  SERIAL_LINE_CONTROL     lineControl;
-  SERIAL_TIMEOUTS         timeouts;
-
   struct _C0C_ADAPTIVE_DELAY *pWriteDelay;
 
   #define C0C_PIN_OUTS_RTS  0
   #define C0C_PIN_OUTS_DTR  1
   #define C0C_PIN_OUTS_OUT1 2
-  #define C0C_PIN_OUTS_OUT2 3
-  #define C0C_PIN_OUTS_OPEN 4
+  #define C0C_PIN_OUTS_OPEN 3
 
-  C0C_PIN_OUTS            pinOuts[5];
+  C0C_PIN_OUTS            pinOuts[4];
 
   SERIAL_HANDFLOW         handFlow;
   SERIAL_CHARS            specialChars;
@@ -317,7 +286,6 @@ typedef struct _C0C_IO_PORT {
   ULONG                   amountInWriteQueue;
   ULONG                   waitMask;
   ULONG                   eventMask;
-  ULONG                   insertMask;
   UCHAR                   escapeChar;
   SERIALPERF_STATS        perfStats;
 
@@ -334,22 +302,17 @@ typedef struct _C0C_IO_PORT {
   #define C0C_MCR_OUT2    0x08
   #define C0C_MCR_LOOP    0x10
   #define C0C_MCR_OPEN    0x80
-  #define C0C_MCR_MASK    ((UCHAR)~(C0C_MCR_OPEN))
+  #define C0C_MCR_MASK    (~(C0C_MCR_OPEN))
 
   UCHAR                   modemControl;
 
   C0C_BUFFER              readBuf;
   C0C_TX_BUFFER           txBuf;
 
-  ULONG                   brokeCharsProbability;
-  short                   brokeChars;  /* number of subsequent chars that should be broken */
-  SIZE_T                  brokeIdleChars;
-
   short                   sendXonXoff;
   ULONG                   writeHolding;
   ULONG                   writeHoldingRemote;
   BOOLEAN                 sendBreak;
-  BOOLEAN                 rcvdBreak;
   BOOLEAN                 tryWrite;
 
   BOOLEAN                 isOpen;
@@ -377,20 +340,15 @@ typedef struct _C0C_FDOPORT_EXTENSION {
   UNICODE_STRING          ntDeviceName;
   UNICODE_STRING          win32DeviceName;
   UNICODE_STRING          symbolicLinkName;
-
-  #define C0C_SHOW_SETNAME    0x01
-  #define C0C_SHOW_SYMLINK    0x02
-  #define C0C_SHOW_DEVICEMAP  0x04
-  #define C0C_SHOW_INTERFACE  0x08
-  #define C0C_SHOW_WMIREG     0x10
-
-  UCHAR                   hide;
-
-  #define C0C_SHOW_SHOWN      0x80
-
-  UCHAR                   shown;
+  unsigned short          shown;
 
   LONG                    openCount;
+
+  KSPIN_LOCK              controlLock;
+
+  SERIAL_BAUD_RATE        baudRate;
+  SERIAL_LINE_CONTROL     lineControl;
+  SERIAL_TIMEOUTS         timeouts;
 
 } C0C_FDOPORT_EXTENSION, *PC0C_FDOPORT_EXTENSION;
 
@@ -535,20 +493,6 @@ VOID PinMap(
     IN ULONG pinDSR,
     IN ULONG pinDCD,
     IN ULONG pinRI);
-
-VOID InsertLsrMst(
-    PC0C_IO_PORT pIoPortRead,
-    BOOLEAN isMST,
-    UCHAR value,
-    PLIST_ENTRY pQueueToComplete);
-
-VOID InsertRemoteBr(
-    PC0C_IO_PORT pIoPortRead,
-    PLIST_ENTRY pQueueToComplete);
-
-VOID InsertRemoteLc(
-    PC0C_IO_PORT pIoPortRead,
-    PLIST_ENTRY pQueueToComplete);
 
 #define C0C_TAG 'c0c'
 #define C0C_ALLOCATE_POOL(PoolType, NumberOfBytes) \

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2008 Vyacheslav Frolov
+ * Copyright (c) 2004-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.2  2006/06/23 11:44:52  vfrolov
- * Mass replacement pDevExt by pIoPort
- *
  * Revision 1.1  2005/01/26 12:18:54  vfrolov
  * Initial revision
  *
@@ -106,7 +103,7 @@ NTSTATUS FdoPortSetWaitMask(
       &queueToComplete);
 
   pIoPort->waitMask = *pSysBuf;
-  pIoPort->eventMask &= pIoPort->waitMask;
+  pIoPort->eventMask = 0;
 
   KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
   FdoPortCompleteQueue(&queueToComplete);

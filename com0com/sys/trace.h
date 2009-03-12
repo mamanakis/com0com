@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2008 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.12  2008/05/04 09:51:45  vfrolov
- * Implemented HiddenMode option
- *
- * Revision 1.11  2007/02/21 16:52:34  vfrolov
- * Added tracing of IRP_MJ_POWER with more details
- *
  * Revision 1.10  2006/08/23 12:56:20  vfrolov
  * Added codeNameTableWmi
  *
@@ -56,12 +50,21 @@
  * Revision 1.1  2005/01/26 12:18:54  vfrolov
  * Initial revision
  *
+ *
  */
 
 #ifndef _TRACE_H_
 #define _TRACE_H_
 
-#if ENABLE_TRACING
+#if DBG
+
+#define HALT_UNLESS3(exp, p1, p2, p3) \
+  if (!(exp)) \
+    KeBugCheckEx(0xDEADC0CD, (FILE_ID << 16) + __LINE__, p1, p2, p3)
+
+#define HALT_UNLESS2(exp, p1, p2) HALT_UNLESS3(exp, p1, p2, 0)
+#define HALT_UNLESS1(exp, p1)     HALT_UNLESS3(exp, p1, 0, 0)
+#define HALT_UNLESS(exp)          HALT_UNLESS3(exp, 0, 0, 0)
 
 #define TRACE_FLAG_PARAMS         0x0001
 #define TRACE_FLAG_RESULTS        0x0002
@@ -134,13 +137,16 @@ CODE2NAME codeNameTableDeviceText[];
 CODE2NAME codeNameTableErrors[];
 CODE2NAME codeNameTableHoldReasons[];
 CODE2NAME codeNameTableFileInformationClass[];
-CODE2NAME codeNameTableShowPort[];
 
 FIELD2NAME codeNameTableControlHandShake[];
 FIELD2NAME codeNameTableFlowReplace[];
 
-#else /* ENABLE_TRACING */
+#else /* DBG */
 
+#define HALT_UNLESS3(exp, p1, p2, p3)
+#define HALT_UNLESS2(exp, p1, p2)
+#define HALT_UNLESS1(exp, p1)
+#define HALT_UNLESS(exp)
 #define TraceOpen(a1, a2)
 #define TraceClose()
 #define Trace0(a1, a2)
@@ -150,6 +156,6 @@ FIELD2NAME codeNameTableFlowReplace[];
 #define TraceModemStatus(a1)
 #define TraceIrp(a1, a2, a3, a4)
 
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
 #endif /* _TRACE_H_ */

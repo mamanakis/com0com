@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2008 Vyacheslav Frolov
+ * Copyright (c) 2005-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,19 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.11  2008/08/25 14:18:58  vfrolov
- * Fixed SERIAL_TRANSMIT_TOGGLE
- *
- * Revision 1.10  2008/08/19 12:40:58  vfrolov
- * Replaces C0CE_INSERT_ENABLE_LSR_NBI (insertion on BREAK OFF)
- * by C0CE_INSERT_ENABLE_LSR_BI (insertion on BREAK change)
- *
- * Revision 1.9  2008/07/11 10:38:00  vfrolov
- * Added nonstandard ability to enable LSR insertion on BREAK OFF
- *
- * Revision 1.8  2007/07/03 14:35:17  vfrolov
- * Implemented pinout customization
- *
  * Revision 1.7  2006/06/21 16:23:57  vfrolov
  * Fixed possible BSOD after one port of pair removal
  *
@@ -54,12 +41,12 @@
  * Revision 1.1  2006/01/10 10:12:05  vfrolov
  * Initial revision
  *
+ *
  */
 
 #include "precomp.h"
 #include "handflow.h"
 #include "bufutils.h"
-#include "../include/cncext.h"
 
 /*
  * FILE_ID used by HALT_UNLESS to put it on BSOD
@@ -307,10 +294,8 @@ VOID UpdateTransmitToggle(
   if ((pIoPort->handFlow.FlowReplace & SERIAL_RTS_MASK) == SERIAL_TRANSMIT_TOGGLE) {
     UCHAR bits;
 
-    if ((pIoPort->writeHolding & SERIAL_TX_WAITING_ON_BREAK) != 0 ||
-        !C0C_TX_BUFFER_EMPTY(&pIoPort->txBuf) ||
-        (pIoPort->irpQueues[C0C_QUEUE_WRITE].pCurrent && !pIoPort->writeHolding) ||
-        (pIoPort->sendXonXoff && (pIoPort->writeHolding & ~SERIAL_TX_WAITING_FOR_XON) == 0))
+    if ((pIoPort->writeHolding & SERIAL_TX_WAITING_ON_BREAK) == 0 &&
+        (pIoPort->sendXonXoff || pIoPort->irpQueues[C0C_QUEUE_WRITE].pCurrent))
     {
       bits = C0C_MCR_RTS;
     } else {
@@ -396,7 +381,7 @@ VOID SetXonXoffHolding(PC0C_IO_PORT pIoPort, short xonXoff)
   }
 }
 
-VOID SetBreakHolding(PC0C_IO_PORT pIoPort, BOOLEAN on, PLIST_ENTRY pQueueToComplete)
+VOID SetBreakHolding(PC0C_IO_PORT pIoPort, BOOLEAN on)
 {
   if (on) {
     if ((pIoPort->writeHolding & SERIAL_TX_WAITING_ON_BREAK) == 0) {
@@ -406,30 +391,11 @@ VOID SetBreakHolding(PC0C_IO_PORT pIoPort, BOOLEAN on, PLIST_ENTRY pQueueToCompl
     }
   } else {
     if (pIoPort->writeHolding & SERIAL_TX_WAITING_ON_BREAK) {
-      PC0C_IO_PORT pIoPortRead;
-
       pIoPort->writeHolding &= ~SERIAL_TX_WAITING_ON_BREAK;
       pIoPort->sendBreak = FALSE;
 
-      pIoPortRead = pIoPort->pIoPortRemote;
-
-      pIoPortRead->rcvdBreak = FALSE;
-
-      if (pIoPortRead->escapeChar && (pIoPortRead->insertMask & C0CE_INSERT_ENABLE_LSR_BI)) {
-        UCHAR lsr = 0;
-
-        if (C0C_TX_BUFFER_THR_EMPTY(&pIoPortRead->txBuf)) {
-          lsr |= 0x20;  /* transmit holding register empty */
-
-          if (C0C_TX_BUFFER_EMPTY(&pIoPortRead->txBuf))
-            lsr |= 0x40;  /* transmit holding register empty and line is idle */
-        }
-
-        InsertLsrMst(pIoPortRead, FALSE,  lsr, pQueueToComplete);
-      }
-
       if ((!(pIoPort->writeHolding & ~SERIAL_TX_WAITING_FOR_XON) && pIoPort->sendXonXoff) ||
-          (!pIoPort->writeHolding && pIoPort->irpQueues[C0C_QUEUE_WRITE].pCurrent))
+          !pIoPort->writeHolding && pIoPort->irpQueues[C0C_QUEUE_WRITE].pCurrent)
       {
         pIoPort->tryWrite = TRUE;
       }

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2008 Vyacheslav Frolov
+ * Copyright (c) 2005-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.7  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.6  2007/07/20 08:00:22  vfrolov
- * Implemented TX buffer
- *
  * Revision 1.5  2006/05/17 15:28:03  vfrolov
  * Implemented SERIAL_DSR_SENSITIVITY
  *
@@ -49,13 +43,20 @@
 #define _C0C_BUFUTILS_H_
 
 typedef struct _C0C_FLOW_FILTER {
-  PC0C_IO_PORT pIoPort;
+  #define C0C_FLOW_FILTER_AUTO_TRANSMIT      0x01
+  #define C0C_FLOW_FILTER_EV_RXCHAR          0x02
+  #define C0C_FLOW_FILTER_EV_RXFLAG          0x04
+  #define C0C_FLOW_FILTER_NULL_STRIPPING     0x08
+  #define C0C_FLOW_FILTER_IGNORE_RECEIVED    0x10
 
-  USHORT events;
   UCHAR flags;
+  UCHAR xonChar;
+  UCHAR xoffChar;
+  UCHAR eventChar;
+  UCHAR escapeChar;
 
+  UCHAR events;
   UCHAR lastXonXoff;
-  SIZE_T rxCount;
 } C0C_FLOW_FILTER, *PC0C_FLOW_FILTER;
 
 

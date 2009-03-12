@@ -18,15 +18,8 @@ requires a COM port to communicate with a device and other port is
 used by device emulation program.
 
 For example, to send/receive faxes over IP you can connect Windows Fax
-application to CNCA0 port and t38modem (http://t38modem.sourceforge.net/)
+application to CNCA0 port and t38modem (part of the OpenH323 project)
 to CNCB0 port. In this case the t38modem is a fax modem emulation program.
-
-In conjunction with the hub4com the com0com allows you to
-  - handle data and signals from a single real serial device by a number of
-    different applications. For example, several applications can share data
-    from one GPS device;
-  - use real serial ports of remote computer like if they exist on the local
-    computer (supports RFC 2217).
 
 The homepage for com0com project is http://com0com.sourceforge.net/.
 
@@ -34,17 +27,14 @@ The homepage for com0com project is http://com0com.sourceforge.net/.
 INSTALLING
 ==========
 
-NOTE (Windows Vista/Windows Server 2008):
+NOTE (Windows Vista):
   Before installing/uninstalling the com0com driver or adding/removing/changing
-  ports the User Account Control (UAC) should be turned off (require reboot).
+  ports on Windows Vista the User Account Control (UAC) should be turned off.
 
-NOTE (x64-based Windows Vista/Windows Server 2008):
+NOTE (x64-based Windows Vista):
   The com0com.sys is a test-signed kernel-mode driver that will not load by
-  default. To enable test signing, enter command:
-
-    bcdedit.exe -set TESTSIGNING ON
-
-  and reboot the computer.
+  default on x64-based Windows Vista. To enable test signing, use the following
+  BCDedit command: bcdedit.exe -set TESTSIGNING ON
 
 NOTE:
   Turning off UAC or enabling test signing will impair computer security.
@@ -97,8 +87,8 @@ HINT: To uninstall the old version of com0com (distributed w/o installer)
 install the new one and then uninstall it.
 
 
-FAQs & HOWTOs
-=============
+FAQ & HOWTO
+===========
 
 Q. Is it possible to change the names CNCA0 and CNCB0 to COM2 and COM3?
 A. Yes, it's possible. To change the names:
@@ -181,102 +171,3 @@ A. It's because there is not signed com0com.cat catalog file. It can be created 
    The inf2cat tool can be installed with the Winqual Submission Tool.
    The makecert, pvk2pfx, signtool and certmgr tools can be installed with the
    Platform Software Development Kit (SDK).
-
-Q. How to monitor and get the paired port settings (baud rate, byte size, parity
-   and stop bits)?
-A. It can be done with extended IOCTL_SERIAL_LSRMST_INSERT. See example in
-
-   http://com0com.sourceforge.net/examples/LSRMST_INSERT/tstser.cpp
-
-Q. To transfer state to CTS and DSR they wired to RTS and DTR. How to transfer
-   state to DCD and RING?
-A. The OUT1 can be wired to DCD and OUT2 to RING. Use extended
-   IOCTL_SERIAL_SET_MODEM_CONTROL and IOCTL_SERIAL_GET_MODEM_CONTROL to change
-   state of OUT1 and OUT2.  See example in
-
-   http://com0com.sourceforge.net/examples/MODEM_CONTROL/tstser.cpp
-
-Q. What version am I running?
-A. In the device manager, the driver properties page shows the version and date
-   of the com0com.inf file, while the driver details page shows a version of
-   com0com.sys file. The version of com0com.sys file is the version that you
-   are running.
-
-Q. I'm able to use some application to talk to some hardware using com2tcp when
-   both the com2tcp 'server' and 'client' are running on the same computer.
-   When I try to move the client to a remote computer the application gives me
-   a timeout message and has no settings to increase the timeout. How to fix
-   the problem?
-A. Try to ajust AddRTTO and AddRITO params for application's COM port:
-
-   1. Launch the Setup Command Prompt shortcut.
-   2. Enter the change command, for example:
-
-      command> change CNCA0 AddRTTO=100,AddRITO=100
-
-Q. I would like to be able to add, remove and rename virtual comm ports from my
-   own custom application. Is there an API that I can use or some command line
-   utility that will do the job?
-A. The setupc.exe is a command line utility that will do the job. To get more
-   info enter:
-
-      setupc help
-
-   BTW: The setupg.exe is a GUI wrapper for setupc.exe.
-
-Q. I need to use com0com ports with an application that doesn't recognize
-   com0com ports as "real" com ports. It does not see a com0com port even
-   though I have changed it's name to COMx. Is there a com0com settings that
-   will make the port appear to be a "real" com port?
-A. No, there is not, but you can "deceive" the application this way:
-
-   1. With the "Add/Remove Hardware" wizard install new standard serial port.
-      You don't need a real serial hardware to do it. Select non conflicted
-      IO/IRQ resources.
-   2. With the "Device Manager" disable the newly created port (let it be
-      COM4).
-   3. Launch the Setup Command Prompt shortcut.
-   4. Install the pair of ports, were one of them has name COM4, for example:
-
-      command> install PortName=COM4 -
-
-      Ignore a warning about the COM4 is "in use" (press Continue).
-
-Q. Is it possible to configure the com0com to randomly corrupt the data? It
-   would be nice to have this feature so that we can test our application
-   robustness.
-A. Yes, it's possible by setting EmuNoise parameter:
-
-   1. Launch the Setup Command Prompt shortcut.
-   2. Enter the change command, for example:
-
-      command> change CNCA0 EmuNoise=0.00001,EmuBR=yes,EmuOverrun=yes
-      command> change CNCB0 EmuNoise=0.00001,EmuBR=yes,EmuOverrun=yes
-
-   Now each character frame (including idle frames) will be corrupted with
-   probability 0.00001.
-
-Q. What is the maximum number of port pairs that can be defined?
-A. It depends from your system. The com0com itself has internal limit
-   1000000 port pairs.
-
-Q. In my application, users could be installing up to 250 com port pairs.
-   Initially, the installation is fairly quick, but each additional com port
-   generally takes longer to install than the previous one. It quickly
-   becomes unacceptable for a user to be expected to wait for the installation.
-A. It's because the installing of each next port pair requires to update driver
-   for all installed pairs. You can speed up installing of multiple com port
-   pairs by using install commands with --no-update option and finish them by
-   update command, for example:
-
-      command> --no-update install - -
-      command> --no-update install - -
-      ...
-      command> --no-update install - -
-      command> update
-
-   Another example:
-
-      > cd /D "%ProgramFiles%\com0com"
-      > FOR /L %i IN (0,1,249) DO setupc --no-update install - -
-      > setupc update

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2009 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.13  2008/09/12 12:29:53  vfrolov
- * Added --silent option
- *
- * Revision 1.12  2007/11/30 09:53:37  vfrolov
- * Added license page
- *
  * Revision 1.11  2007/11/23 08:23:29  vfrolov
  * Added popup for uncompatible CPU
  *
@@ -242,15 +236,6 @@ Section "com0com" sec_com0com
 
   WriteUninstaller "uninstall.exe"
 
-  GetTempFileName $0
-
-  StrCpy $1 ""
-  IfSilent 0 +2
-  StrCpy $1 "--silent"
-
-  ExecWait "setupc.exe $1 --output $0 update"
-  !insertmacro MoveFileToDetails $0
-
 SectionEnd
 
 ;--------------------------------
@@ -270,12 +255,7 @@ SectionEnd
 Section "CNCA0<->CNCB0" sec_ports
 
   GetTempFileName $0
-
-  StrCpy $1 ""
-  IfSilent 0 +2
-  StrCpy $1 "--silent"
-
-  ExecWait "setupc.exe $1 --output $0 install 0 - -"
+  ExecWait "setupc.exe --output $0 install 0 - -"
   !insertmacro MoveFileToDetails $0
 
 SectionEnd
@@ -290,12 +270,7 @@ Section "Uninstall"
   SetOutPath $INSTDIR
 
   GetTempFileName $0
-
-  StrCpy $1 ""
-  IfSilent 0 +2
-  StrCpy $1 "--silent"
-
-  ExecWait "setupc.exe $1 --output $0 uninstall"
+  ExecWait "setupc.exe --output $0 uninstall"
   !insertmacro MoveFileToDetails $0
 
   ; Remove registry keys

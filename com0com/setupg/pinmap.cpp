@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2007-2008 Vyacheslav Frolov
+ * Copyright (c) 2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,11 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.2  2008/04/08 06:52:12  vfrolov
- * Added pin OUT2
- *
- * Revision 1.1  2007/10/31 10:16:55  vfrolov
- * Initial revision
  *
  */
 
@@ -56,7 +51,6 @@ namespace SetupApp {
           L(l),
           IC(ic),
           isFixed(_isFixed),
-          isNoise(false),
           source(nullptr) {}
 
       void Link(PinSource ^_source) { source = gcnew PinSource(_source); }
@@ -70,7 +64,6 @@ namespace SetupApp {
       int L;
       int IC;
       bool isFixed;
-      bool isNoise;
 
       PinSource ^source;
   };
@@ -82,9 +75,9 @@ using namespace System::Drawing;
 using namespace System::Windows::Forms;
 using namespace System::Collections::Generic;
 
-#define NUM_LINES          11
+#define NUM_LINES          10
 #define NUM_MIDDLE_SRCS    1
-#define MAX_DIFF           7
+#define MAX_DIFF           6
 
 #define UL                 0
 #define DL                 (NUM_LINES - 1)
@@ -94,7 +87,7 @@ using namespace System::Collections::Generic;
 #define RC                 (NUM_COLUMS - 1)
 #define MC                 (NUM_COLUMS/2)
 
-#define PIN_SIZE           9
+#define PIN_SIZE           8
 #define INVERT_SIZE        14
 
 PinMap::PinMap()
@@ -118,7 +111,6 @@ PinMap::PinMap()
   pins["CTS(A)"]  = gcnew Pin(C, L++, false, 0);
   pins["RI(A)"]   = gcnew Pin(C, L++, false, 0);
   pins["OUT1(A)"] = gcnew Pin(C, L++, false, IC++);
-  pins["OUT2(A)"] = gcnew Pin(C, L++, false, IC++);
   pins["OPEN(A)"] = gcnew Pin(C, L++, false, IC++);
 
   C = RC;
@@ -133,7 +125,6 @@ PinMap::PinMap()
   pins["CTS(B)"]  = gcnew Pin(C, L++, false, 0);
   pins["RI(B)"]   = gcnew Pin(C, L++, false, 0);
   pins["OUT1(B)"] = gcnew Pin(C, L++, false, IC++);
-  pins["OUT2(B)"] = gcnew Pin(C, L++, false, IC++);
   pins["OPEN(B)"] = gcnew Pin(C, L++, false, IC++);
 
   pins["ON"]      = gcnew Pin(MC, DL, false, 0);
@@ -153,22 +144,6 @@ void PinMap::Link(String ^pinName, String ^source, bool invert)
 void PinMap::Init(PortPair ^pair)
 {
   MouseInit();
-
-  for (int i = 0 ; i < 2 ; i++) {
-    String ^tx = (i == 0) ? "TX(A)" : "TX(B)";
-
-    if (pins->ContainsKey(tx)) {
-      if (pair != nullptr &&
-          pair[i] != nullptr &&
-          pair[i]->ContainsKey("emunoise") &&
-          pair[i]["emunoise"]->IndexOfAny((gcnew String("123456789"))->ToCharArray()) != -1)
-      {
-        pins[tx]->isNoise = true;
-      } else {
-        pins[tx]->isNoise = false;
-      }
-    }
-  }
 
   array<String ^> ^dstPins = {"DSR", "DCD", "CTS", "RI"};
 
@@ -220,7 +195,7 @@ void PinMap::GetChanges(PortPair ^pair)
       array<Char> ^separator = {'('};
 
       array<String ^> ^fields;
-
+      
       fields = kvp.Key->Split(separator);
 
       if (fields->Length != 2)
@@ -438,6 +413,7 @@ void PinMap::Paint(PaintEventArgs ^e, Control ^control)
             Point(line[3].X + INVERT_SIZE/2, line[3].Y),
           };
 
+          Pen ^pCur = (pin->isFixed || pin->source->IsEqual(pinsOrg[kvp.Key])) ? pOrg : pNew;
           e->Graphics->DrawPolygon(pCur, poly);
         }
       }
@@ -455,6 +431,7 @@ void PinMap::Paint(PaintEventArgs ^e, Control ^control)
             Point(line[3].X, line[3].Y - INVERT_SIZE/2),
           };
 
+          Pen ^pCur = (pin->isFixed || pin->source->IsEqual(pinsOrg[kvp.Key])) ? pOrg : pNew;
           e->Graphics->DrawPolygon(pCur, poly);
         }
       }
@@ -472,6 +449,7 @@ void PinMap::Paint(PaintEventArgs ^e, Control ^control)
             Point(line[3].X, line[3].Y + INVERT_SIZE/2),
           };
 
+          Pen ^pCur = (pin->isFixed || pin->source->IsEqual(pinsOrg[kvp.Key])) ? pOrg : pNew;
           e->Graphics->DrawPolygon(pCur, poly);
         }
       }
@@ -519,15 +497,6 @@ void PinMap::Paint(PaintEventArgs ^e, Control ^control)
       }
 
       e->Graphics->DrawLines(pCur, line);
-
-      if (pinS->isNoise) {
-        Pen ^pNoise = gcnew Pen(pCur->Color, 3);
-
-        pNoise->EndCap = pCur->EndCap;
-        pNoise->DashStyle = Drawing2D::DashStyle::Dot;
-
-        e->Graphics->DrawLines(pNoise, line);
-      }
     }
   }
 

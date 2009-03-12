@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2008 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,22 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.35  2008/09/17 07:58:32  vfrolov
- * Added AddRTTO and AddRITO parameters
- *
- * Revision 1.34  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.33  2008/05/04 09:51:44  vfrolov
- * Implemented HiddenMode option
- *
- * Revision 1.32  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
- * Revision 1.31  2007/10/19 16:03:41  vfrolov
- * Added default values
- *
  * Revision 1.30  2007/09/26 10:12:13  vfrolov
  * Added checks of DeviceExtension for zero
  *
@@ -167,7 +151,6 @@ VOID RemoveFdoPort(IN PC0C_FDOPORT_EXTENSION pDevExt)
     pDevExt->pIoPortLocal->exclusiveMode = FALSE;
     pDevExt->pIoPortLocal->pDevExt = NULL;
     FreeTxBuffer(&pDevExt->pIoPortLocal->txBuf);
-    pDevExt->pIoPortLocal->brokeChars = 0;  /* reset on idle */
   }
 
   if (!HidePort(pDevExt))
@@ -194,9 +177,7 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
   PDEVICE_OBJECT pNewDevObj;
   PC0C_FDOPORT_EXTENSION pDevExt;
   PC0C_PDOPORT_EXTENSION pPhDevExt;
-  ULONG emuBR, emuOverrun, plugInMode, exclusiveMode, hiddenMode;
-  ULONG brokeCharsProbability;
-  ULONG addRTTO, addRITO;
+  ULONG emuBR, emuOverrun, plugInMode, exclusiveMode;
   ULONG pinCTS, pinDSR, pinDCD, pinRI;
   UNICODE_STRING ntDeviceName;
   PWCHAR pPortName;
@@ -274,17 +255,11 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
     emuOverrun = C0C_DEFAULT_EMUOVERRUN;
     plugInMode = C0C_DEFAULT_PLUGINMODE;
     exclusiveMode = C0C_DEFAULT_EXCLUSIVEMODE;
-    hiddenMode = C0C_DEFAULT_HIDDENMODE;
-    pinCTS = C0C_DEFAULT_PIN_CTS;
-    pinDSR = C0C_DEFAULT_PIN_DSR;
-    pinDCD = C0C_DEFAULT_PIN_DCD;
-    pinRI = C0C_DEFAULT_PIN_RI;
-    brokeCharsProbability = C0C_DEFAULT_EMUNOISE;
-    addRTTO = C0C_DEFAULT_ADDRTTO;
-    addRITO = C0C_DEFAULT_ADDRITO;
+    pinCTS = pinDSR = pinDCD = pinRI = 0;
 
     if (NT_SUCCESS(status)) {
-      RTL_QUERY_REGISTRY_TABLE queryTable[13];
+      RTL_QUERY_REGISTRY_TABLE queryTable[9];
+      ULONG zero = 0;
       int i;
 
       RtlZeroMemory(queryTable, sizeof(queryTable));
@@ -292,6 +267,7 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
       for (i = 0 ; i < (sizeof(queryTable)/sizeof(queryTable[0]) - 1) ; i++) {
         queryTable[i].Flags         = RTL_QUERY_REGISTRY_DIRECT;
         queryTable[i].DefaultType   = REG_DWORD;
+        queryTable[i].DefaultData   = &zero;
         queryTable[i].DefaultLength = sizeof(ULONG);
       }
 
@@ -316,44 +292,20 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
       queryTable[i].DefaultData   = &exclusiveMode;
 
       i++;
-      queryTable[i].Name          = L"HiddenMode";
-      queryTable[i].EntryContext  = &hiddenMode;
-      queryTable[i].DefaultData   = &hiddenMode;
-
-      i++;
       queryTable[i].Name          = L"cts";
       queryTable[i].EntryContext  = &pinCTS;
-      queryTable[i].DefaultData   = &pinCTS;
 
       i++;
       queryTable[i].Name          = L"dsr";
       queryTable[i].EntryContext  = &pinDSR;
-      queryTable[i].DefaultData   = &pinDSR;
 
       i++;
       queryTable[i].Name          = L"dcd";
       queryTable[i].EntryContext  = &pinDCD;
-      queryTable[i].DefaultData   = &pinDCD;
 
       i++;
       queryTable[i].Name          = L"ri";
       queryTable[i].EntryContext  = &pinRI;
-      queryTable[i].DefaultData   = &pinRI;
-
-      i++;
-      queryTable[i].Name          = L"EmuNoise";
-      queryTable[i].EntryContext  = &brokeCharsProbability;
-      queryTable[i].DefaultData   = &brokeCharsProbability;
-
-      i++;
-      queryTable[i].Name          = L"AddRTTO";
-      queryTable[i].EntryContext  = &addRTTO;
-      queryTable[i].DefaultData   = &addRTTO;
-
-      i++;
-      queryTable[i].Name          = L"AddRITO";
-      queryTable[i].EntryContext  = &addRITO;
-      queryTable[i].DefaultData   = &addRITO;
 
       RtlQueryRegistryValues(
           RTL_REGISTRY_ABSOLUTE,
@@ -431,23 +383,9 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
     Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"Disabled exclusive mode");
   }
 
-  SetHiddenMode(pDevExt, hiddenMode);
-
-  pDevExt->pIoPortLocal->addRTTO = addRTTO;
-
-#if ENABLE_TRACING
-  if (addRTTO)
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"Enabled ReadTotalTimeoutConstant increase");
-#endif /* ENABLE_TRACING */
-
-  pDevExt->pIoPortLocal->addRITO = addRITO;
-
-#if ENABLE_TRACING
-  if (addRITO)
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"Enabled ReadIntervalTimeout increase");
-#endif /* ENABLE_TRACING */
-
   AllocTimeouts(pDevExt->pIoPortLocal);
+
+  KeInitializeSpinLock(&pDevExt->controlLock);
 
   RtlZeroMemory(&pDevExt->pIoPortLocal->specialChars, sizeof(pDevExt->pIoPortLocal->specialChars));
   pDevExt->pIoPortLocal->specialChars.XonChar      = 0x11;
@@ -457,27 +395,18 @@ NTSTATUS AddFdoPort(IN PDRIVER_OBJECT pDrvObj, IN PDEVICE_OBJECT pPhDevObj)
   pDevExt->pIoPortLocal->handFlow.ControlHandShake = SERIAL_DTR_CONTROL;
   pDevExt->pIoPortLocal->handFlow.FlowReplace      = SERIAL_RTS_CONTROL;
 
-  pDevExt->pIoPortLocal->lineControl.WordLength    = 7;
-  pDevExt->pIoPortLocal->lineControl.Parity        = EVEN_PARITY;
-  pDevExt->pIoPortLocal->lineControl.StopBits      = STOP_BIT_1;
-  pDevExt->pIoPortLocal->baudRate.BaudRate         = 1200;
+  pDevExt->lineControl.WordLength    = 7;
+  pDevExt->lineControl.Parity        = EVEN_PARITY;
+  pDevExt->lineControl.StopBits      = STOP_BIT_1;
+  pDevExt->baudRate.BaudRate         = 1200;
 
-  SetWriteDelay(pDevExt->pIoPortLocal);
+  SetWriteDelay(pDevExt);
 
   SetTxBuffer(&pDevExt->pIoPortLocal->txBuf, 1, TRUE);
 
   pDevExt->pIoPortLocal->modemControl |= C0C_MCR_OUT2;
 
   PinMap(pDevExt->pIoPortLocal, pinCTS, pinDSR, pinDCD, pinRI);
-
-  pDevExt->pIoPortLocal->brokeCharsProbability = brokeCharsProbability;
-
-#if ENABLE_TRACING
-  if (brokeCharsProbability)
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"Enabled noise emulation");
-  else
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"Disabled noise emulation");
-#endif /* ENABLE_TRACING */
 
   pDevExt->pLowDevObj = IoAttachDeviceToDeviceStack(pNewDevObj, pPhDevObj);
 

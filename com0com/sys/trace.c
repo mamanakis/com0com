@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2008 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,20 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.31  2008/06/10 11:24:20  vfrolov
- * Disabled tracing if traceFileName is empty
- *
- * Revision 1.30  2008/04/08 10:37:56  vfrolov
- * Implemented ability to set individual pins with extended
- * IOCTL_SERIAL_SET_MODEM_CONTROL and IOCTL_SERIAL_GET_MODEM_CONTROL
- *
- * Revision 1.29  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
- * Revision 1.28  2007/06/20 10:32:44  vfrolov
- * Added PID tracing on IRP_MJ_CREATE
- *
  * Revision 1.27  2007/06/05 12:26:38  vfrolov
  * Allocate trace buffers only if trace enabled
  *
@@ -125,7 +111,7 @@
 
 #include "precomp.h"
 
-#if ENABLE_TRACING
+#if DBG
 
 #include "version.h"
 
@@ -1180,7 +1166,7 @@ VOID TraceOpen(
   QueryRegistryTrace(pRegistryPath);
   QueryRegistryTraceEnable(pRegistryPath);
 
-  if (!pTraceData->traceFileName.Buffer || !pTraceData->traceFileName.Length)
+  if (!pTraceData->traceFileName.Buffer)
     TraceDisable();
 
   if (TRACE_FILE_OK) {
@@ -1429,33 +1415,12 @@ VOID TraceIrp(
                 codeNameTableModemStatus, *((PULONG)pSysBuf));
           }
           break;
-        case IOCTL_SERIAL_SET_MODEM_CONTROL:
-          if ((flags & TRACE_FLAG_PARAMS) && inLength >= sizeof(ULONG)) {
-            pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
-            pDestStr = AnsiStrCopyMask(pDestStr, &size,
-                codeNameTableModemControl, *((PULONG)pSysBuf));
-
-            if (inLength > sizeof(ULONG)) {
-              pDestStr = AnsiStrCopyStr(pDestStr, &size, ", ");
-              pDestStr = AnsiStrCopyDump(pDestStr, &size, ((PUCHAR)pSysBuf) + sizeof(ULONG), inLength - sizeof(ULONG));
-            }
-          }
-          break;
         case IOCTL_SERIAL_GET_MODEM_CONTROL:
         case IOCTL_SERIAL_GET_DTRRTS:
-          if ((flags & TRACE_FLAG_PARAMS) && inLength) {
-            pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
-            pDestStr = AnsiStrCopyDump(pDestStr, &size, pSysBuf, inLength);
-          }
           if ((flags & TRACE_FLAG_RESULTS) && inform >= sizeof(ULONG)) {
             pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
             pDestStr = AnsiStrCopyMask(pDestStr, &size,
                 codeNameTableModemControl, *((PULONG)pSysBuf));
-
-            if (inform > sizeof(ULONG)) {
-              pDestStr = AnsiStrCopyStr(pDestStr, &size, ", ");
-              pDestStr = AnsiStrCopyDump(pDestStr, &size, ((PUCHAR)pSysBuf) + sizeof(ULONG), inform - sizeof(ULONG));
-            }
           }
           break;
         case IOCTL_SERIAL_SET_WAIT_MASK:
@@ -1540,18 +1505,8 @@ VOID TraceIrp(
             pDestStr = AnsiStrCopyCommStatus(pDestStr, &size, (PSERIAL_STATUS)pSysBuf);
           break;
         case IOCTL_SERIAL_LSRMST_INSERT:
-          if ((flags & TRACE_FLAG_PARAMS) && inLength >= sizeof(UCHAR)) {
+          if ((flags & TRACE_FLAG_PARAMS) && inLength >= sizeof(UCHAR))
             pDestStr = AnsiStrFormat(pDestStr, &size, " escapeChar=0x%02X", (int)(*(PUCHAR)pSysBuf & 0xFF));
-
-            if (inLength > sizeof(UCHAR)) {
-              pDestStr = AnsiStrCopyStr(pDestStr, &size, ", ");
-              pDestStr = AnsiStrCopyDump(pDestStr, &size, ((PUCHAR)pSysBuf) + sizeof(UCHAR), inLength - sizeof(UCHAR));
-            }
-          }
-          if ((flags & TRACE_FLAG_RESULTS) && inform) {
-            pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
-            pDestStr = AnsiStrCopyDump(pDestStr, &size, pSysBuf, inform);
-          }
           break;
         case IOCTL_SERIAL_GET_STATS:
           if ((flags & TRACE_FLAG_RESULTS) && inform >= sizeof(SERIALPERF_STATS))
@@ -1718,6 +1673,6 @@ VOID TraceIrp(
 }
 /********************************************************************/
 
-#else /* ENABLE_TRACING */
+#else /* DBG */
   #pragma warning(disable:4206) // nonstandard extension used : translation unit is empty
-#endif /* ENABLE_TRACING */
+#endif /* DBG */

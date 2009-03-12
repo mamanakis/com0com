@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2009 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,30 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.29  2009/02/11 07:35:22  vfrolov
- * Added --no-update option
- *
- * Revision 1.28  2009/01/12 12:48:05  vfrolov
- * Fixed typo
- *
- * Revision 1.27  2008/12/25 16:58:45  vfrolov
- * Implemented busynames command
- *
- * Revision 1.26  2008/12/24 15:32:22  vfrolov
- * Added logging COM port numbers in the COM port database
- *
- * Revision 1.25  2008/09/12 12:21:49  vfrolov
- * Added --silent option
- *
- * Revision 1.24  2008/09/12 09:55:59  vfrolov
- * Fixed help cutting
- *
- * Revision 1.23  2008/04/02 10:28:24  vfrolov
- * Added reload command
- *
- * Revision 1.22  2007/11/27 16:32:54  vfrolov
- * Added disable and enable options
- *
  * Revision 1.21  2007/10/19 16:09:55  vfrolov
  * Implemented --detail-prms option
  *
@@ -122,7 +98,7 @@
 #include "msg.h"
 #include "utils.h"
 #include "portnum.h"
-#include "comdb.h"
+#include <msports.h>
 
 #define TEXT_PREF
 #include "../include/com0com.h"
@@ -138,7 +114,6 @@
 
 ///////////////////////////////////////////////////////////////
 static BOOL detailPrms = FALSE;
-static BOOL no_update = FALSE;
 ///////////////////////////////////////////////////////////////
 static BOOL IsValidPortNum(int num)
 {
@@ -161,7 +136,8 @@ static BOOL IsValidPortNum(int num)
 }
 ///////////////////////////////////////////////////////////////
 static BOOL IsValidPortName(
-    const char *pPortName)
+    const char *pPortName,
+    const char *pPhDevName)
 {
   int res;
 
@@ -181,37 +157,83 @@ static BOOL IsValidPortName(
     char phDevName[80];
 
     if (!QueryDosDevice(pPortName, phDevName, sizeof(phDevName)/sizeof(phDevName[0]))) {
-      if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+      if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        if ((pPortName[0] == 'C' || pPortName[0] == 'c') &&
+            (pPortName[1] == 'O' || pPortName[1] == 'o') &&
+            (pPortName[2] == 'M' || pPortName[2] == 'm'))
+        {
+          int num;
+
+          if (StrToInt(pPortName + 3, &num) && num > 0) {
+            HCOMDB  hComDB;
+            LONG err;
+
+            err = ComDBOpen(&hComDB);
+
+            if (err != ERROR_SUCCESS) {
+              res = ShowLastError(MB_CANCELTRYCONTINUE, "ComDBOpen()");
+              continue;
+            }
+
+            DWORD maxPortsReported;
+
+            err = ComDBGetCurrentPortUsage(hComDB, NULL, 0, CDB_REPORT_BYTES, &maxPortsReported);
+
+            if (err != ERROR_SUCCESS) {
+              ComDBClose(hComDB);
+              res = ShowError(MB_CANCELTRYCONTINUE, err, "ComDBGetCurrentPortUsage()");
+              continue;
+            }
+
+            if (maxPortsReported < (DWORD)num) {
+              ComDBClose(hComDB);
+              continue;
+            }
+
+            if (maxPortsReported > (DWORD)num)
+              maxPortsReported = num;
+
+            BYTE *pBuf = (BYTE *)LocalAlloc(LPTR, maxPortsReported);
+
+            if (!pBuf) {
+              ComDBClose(hComDB);
+
+              SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+              res = ShowLastError(MB_CANCELTRYCONTINUE, "LocalAlloc(%lu)", (unsigned long)maxPortsReported);
+              continue;
+            }
+
+            err = ComDBGetCurrentPortUsage(hComDB, pBuf, num, CDB_REPORT_BYTES, &maxPortsReported);
+            ComDBClose(hComDB);
+
+            if (err != ERROR_SUCCESS) {
+              LocalFree(pBuf);
+              res = ShowError(MB_CANCELTRYCONTINUE, err, "ComDBGetCurrentPortUsage()");
+              continue;
+            }
+
+            if (pBuf[num - 1])
+              res = ShowMsg(MB_CANCELTRYCONTINUE,
+                            "The port name %s is already logged as \"in use\"\n"
+                            "in the COM port database.",
+                            pPortName);
+
+            LocalFree(pBuf);
+          }
+        }
         continue;
+      }
 
       phDevName[0] = 0;
     }
+
+    if (pPhDevName && !lstrcmpi(pPhDevName, phDevName))
+      break;
 
     res = ShowMsg(MB_CANCELTRYCONTINUE,
                   "The port name %s is already used for other device %s.",
                   pPortName, phDevName);
 
-  } while (res == IDTRYAGAIN);
-
-  if (res != IDCONTINUE)
-    return FALSE;
-
-  do {
-    res = IDCONTINUE;
-
-    BOOL inUse;
-
-    if (!ComDbGetInUse(pPortName, inUse)) {
-      res = IDCANCEL;
-      continue;
-    }
-
-    if (inUse) {
-      res = ShowMsg(MB_CANCELTRYCONTINUE,
-                    "The port name %s is already logged as \"in use\"\n"
-                    "in the COM port database.",
-                    pPortName);
-    }
   } while (res == IDTRYAGAIN);
 
   if (res != IDCONTINUE)
@@ -244,8 +266,8 @@ static VOID SetFriendlyName(
   char friendlyName[80];
 
   SNPRINTF(friendlyName, sizeof(friendlyName)/sizeof(friendlyName[0]),
-           "com0com - bus for serial port pair emulator %d (%s <-> %s)",
-           num, portName[0], portName[1]);
+           "com0com - bus for serial port pair emulator (%s <-> %s)",
+           portName[0], portName[1]);
 
   SetupDiSetDeviceRegistryProperty(hDevInfo, pDevInfoData, SPDRP_FRIENDLYNAME,
                                   (LPBYTE)friendlyName, (lstrlen(friendlyName) + 1) * sizeof(*friendlyName));
@@ -274,12 +296,11 @@ static VOID CleanDevPropertiesStack(InfFile &infFile, Stack &stack, BOOL enable,
 ///////////////////////////////////////////////////////////////
 struct ChangeDeviceParams {
   ChangeDeviceParams(InfFile &_infFile, const char *_pPhPortName, const char *_pParameters)
-    : pInfFile(&_infFile), pPhPortName(_pPhPortName), pParameters(_pParameters), changed(FALSE) {}
+    : pInfFile(&_infFile), pPhPortName(_pPhPortName), pParameters(_pParameters) {}
 
   InfFile *pInfFile;
   const char *pPhPortName;
   const char *pParameters;
-  BOOL changed;
 };
 
 static BOOL ChangeDevice(
@@ -313,10 +334,6 @@ static BOOL ChangeDevice(
 
       if (err == ERROR_SUCCESS) {
         if (pPhPortName && !lstrcmpi(pPhPortName, phPortName)) {
-          char portNameOld[20];
-
-          portParameters.FillPortName(portNameOld, sizeof(portNameOld)/sizeof(portNameOld[0]));
-
           portParameters.ParseParametersStr(pParameters);
 
           char phDevName[40];
@@ -328,14 +345,10 @@ static BOOL ChangeDevice(
 
           portParameters.FillPortName(portName, sizeof(portName)/sizeof(portName[0]));
 
-          if (portParameters.Changed() &&
-              (!lstrcmpi(portName, portNameOld) || IsValidPortName(portName)))
-          {
+          if (IsValidPortName(portName, phDevName) && portParameters.Changed()) {
             err = portParameters.Save();
 
             if (err == ERROR_SUCCESS) {
-              ((ChangeDeviceParams *)pParam)->changed = TRUE;
-
               portParameters.FillParametersStr(buf, sizeof(buf)/sizeof(buf[0]), detailPrms);
               Trace("change %s %s\n", phPortName, buf);
 
@@ -376,11 +389,8 @@ int Change(InfFile &infFile, const char *pPhPortName, const char *pParameters)
 
   EnumDevices(infFile, &devProperties, &rebootRequired, ChangeDevice, &params);
 
-  if (params.changed)
-    ComDbSync(infFile);
-
   if (rebootRequired)
-    PromptReboot();
+    SetupPromptReboot(NULL, NULL, FALSE);
 
   return 0;
 }
@@ -450,10 +460,8 @@ int Remove(InfFile &infFile, int num)
     }
   }
 
-  ComDbSync(infFile);
-
   if (rebootRequired)
-    PromptReboot();
+    SetupPromptReboot(NULL, NULL, FALSE);
 
   if (res != IDCONTINUE)
     return 1;
@@ -484,7 +492,7 @@ int Preinstall(InfFile &infFile)
   return 0;
 }
 ///////////////////////////////////////////////////////////////
-int Reload(InfFile &infFile, BOOL update)
+int Update(InfFile &infFile)
 {
   Stack stack;
   BOOL rebootRequired = FALSE;
@@ -498,21 +506,17 @@ int Reload(InfFile &infFile, BOOL update)
     return 1;
   }
 
-  BOOL rr = FALSE;
+  BOOL rr;
 
-  if (update && !no_update) {
-    if (!UpdateDriverForPlugAndPlayDevices(0, C0C_BUS_DEVICE_ID, infFile.Path(), INSTALLFLAG_FORCE, &rr)) {
-      CleanDevPropertiesStack(infFile, stack, TRUE, &rebootRequired);
-      return 1;
-    }
+  if (!UpdateDriverForPlugAndPlayDevices(0, C0C_BUS_DEVICE_ID, infFile.Path(), INSTALLFLAG_FORCE, &rr)) {
+    CleanDevPropertiesStack(infFile, stack, TRUE, &rebootRequired);
+    return 1;
   }
 
   CleanDevPropertiesStack(infFile, stack, TRUE, &rebootRequired);
 
-  ComDbSync(infFile);
-
   if (rebootRequired || rr)
-    PromptReboot();
+    SetupPromptReboot(NULL, NULL, FALSE);
 
   return 0;
 }
@@ -529,7 +533,7 @@ int Disable(InfFile &infFile)
     return 1;
 
   if (rebootRequired)
-    PromptReboot();
+    SetupPromptReboot(NULL, NULL, FALSE);
 
   return 0;
 }
@@ -547,7 +551,7 @@ int Enable(InfFile &infFile)
   }
 
   if (rebootRequired)
-    PromptReboot();
+    SetupPromptReboot(NULL, NULL, FALSE);
 
   return  0;
 }
@@ -586,7 +590,7 @@ static BOOL InstallDeviceCallBack(
 
 static BOOL InstallBusDevice(InfFile &infFile, int num)
 {
-  return InstallDevice(infFile, C0C_BUS_DEVICE_ID, C0C_CLASS, InstallDeviceCallBack, &num, !no_update);
+  return InstallDevice(infFile, C0C_BUS_DEVICE_ID, C0C_CLASS, InstallDeviceCallBack, &num);
 }
 
 static BOOL AddDeviceToBusyMask(
@@ -671,7 +675,7 @@ int Install(InfFile &infFile, const char *pParametersA, const char *pParametersB
 
       portParameters.FillPortName(portName[j], sizeof(portName[j])/sizeof(portName[j][0]));
 
-      if (!IsValidPortName(portName[j]))
+      if (!IsValidPortName(portName[j], NULL))
         goto err;
 
       if (portParameters.Changed()) {
@@ -703,8 +707,6 @@ int Install(InfFile &infFile, const char *pParametersA, const char *pParametersB
   if (!InstallBusDevice(infFile, i))
     goto err;
 
-  ComDbSync(infFile);
-
   return  0;
 
 err:
@@ -721,34 +723,30 @@ int Uninstall(InfFile &infFile)
 
   devProperties = DevProperties();
   if (!devProperties.DevId(C0C_PORT_DEVICE_ID))
-    goto err;
+    return 1;
 
-  {
-    Stack stack;
+  Stack stack;
 
-    if (!DisableDevices(infFile, &devProperties, &rebootRequired, &stack)) {
-      CleanDevPropertiesStack(infFile, stack, TRUE, &rebootRequired);
-      goto err;
-    }
-
-    CleanDevPropertiesStack(infFile, stack, FALSE, &rebootRequired);
+  if (!DisableDevices(infFile, &devProperties, &rebootRequired, &stack)) {
+    CleanDevPropertiesStack(infFile, stack, TRUE, &rebootRequired);
+    return 1;
   }
+
+  CleanDevPropertiesStack(infFile, stack, FALSE, &rebootRequired);
 
   devProperties = DevProperties();
   if (!devProperties.DevId(C0C_BUS_DEVICE_ID))
-    goto err;
+    return 1;
 
   if (!RemoveDevices(infFile, &devProperties, &rebootRequired))
-    goto err;
+    return 1;
 
   if (!RemoveDevices(infFile, NULL, NULL))
-    goto err;
-
-  ComDbSync(infFile);
+    return 1;
 
   if (rebootRequired) {
-    PromptReboot();
-    goto err;
+    SetupPromptReboot(NULL, NULL, FALSE);
+    return 0;
   }
 
   int res;
@@ -772,8 +770,7 @@ int Uninstall(InfFile &infFile)
 
           if (QueryServiceStatus(hSrv, &srvStatus)) {
             if (srvStatus.dwCurrentState == SERVICE_STOPPED) {
-              if (Silent() ||
-                  ShowMsg(MB_YESNO,
+              if (ShowMsg(MB_YESNO,
                   "The deleting %s service will remove your manual settings.\n"
                   "Would you like to delete service?\n",
                   C0C_SERVICE) == IDYES)
@@ -817,7 +814,7 @@ int Uninstall(InfFile &infFile)
     Trace("WARNING: Service %s not deleted\n", C0C_SERVICE);
 
   if (res != IDCONTINUE)
-    goto err;
+    return 1;
 
   do {
     notDeleted = TRUE;
@@ -843,7 +840,7 @@ int Uninstall(InfFile &infFile)
     Trace("WARNING: Key %s not deleted\n", C0C_REGKEY_EVENTLOG);
 
   if (res != IDCONTINUE)
-    goto err;
+    return 1;
 
   do {
     notDeleted = TRUE;
@@ -918,174 +915,16 @@ int Uninstall(InfFile &infFile)
     Trace("WARNING: Class %s not deleted\n", infFile.ClassGUID());
 
   if (res != IDCONTINUE)
-    goto err;
+    return 1;
 
   if (!infFile.UninstallOEMInf())
-    goto err;
+    return 1;
 
   if (!infFile.UninstallFiles(C0C_COPY_DRIVERS_SECTION))
-    goto err;
+    return 1;
 
   if (!InfFile::UninstallAllInfFiles(C0C_CLASS_GUID, NULL, NULL))
-    goto err;
-
-  return 0;
-
-err:
-
-  Trace("\nUninstall not completed!\n");
-
-  return  1;
-}
-///////////////////////////////////////////////////////////////
-int ShowBusyNames(const char *pPattern)
-{
-  char *pPatternUp;
-  SIZE_T sizePattern;
-
-  sizePattern = (lstrlen(pPattern) + 1) * sizeof(pPatternUp[0]);
-
-  pPatternUp = (char *)LocalAlloc(LPTR, sizePattern);
-
-  if (!pPatternUp) {
-    ShowError(MB_OK|MB_ICONSTOP, ERROR_NOT_ENOUGH_MEMORY, "LocalAlloc(%lu)", (unsigned long)sizePattern);
     return 1;
-  }
-
-  lstrcpy(pPatternUp, pPattern);
-  CharUpper(pPatternUp);
-
-  char *pNames = NULL;
-  DWORD iNamesEnd = 0;
-
-  for (int i = 0 ; i < 2 ; i++) {
-    char *pBuf = NULL;
-
-    for (DWORD size = 1024 ; size >= 1024 ; size += 1024) {
-      char *pBufNew;
-
-      if (!pBuf)
-        pBufNew = (char *)LocalAlloc(LPTR, size);
-      else
-        pBufNew = (char *)LocalReAlloc(pBuf, size, LMEM_ZEROINIT|LMEM_MOVEABLE);
-
-      if (!pBufNew) {
-        if (pBuf) {
-          LocalFree(pBuf);
-          pBuf = NULL;
-        }
-
-        if (ShowError(MB_OKCANCEL, ERROR_NOT_ENOUGH_MEMORY, "LocalAlloc(%lu)", (unsigned long)size) == IDCANCEL) {
-          if (pNames)
-            LocalFree(pNames);
-
-          LocalFree(pPatternUp);
-          return 1;
-        }
-
-        break;
-      }
-
-      pBuf = pBufNew;
-
-      DWORD res = (i != 0
-                   ? QueryDosDevice(NULL, pBuf, size/sizeof(pBuf[0]))
-                   : ComDbQueryNames(pBuf, size/sizeof(pBuf[0])));
-
-      if (!res) {
-        if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-          continue;
-
-        LocalFree(pBuf);
-        pBuf = NULL;
-
-        if (GetLastError() == ERROR_FILE_NOT_FOUND)
-          continue;
-
-        if (ShowLastError(MB_OKCANCEL,
-            i != 0 ? "QueryDosDevice()" : "ComDbNames()") == IDCANCEL)
-        {
-          if (pNames)
-            LocalFree(pNames);
-
-          LocalFree(pPatternUp);
-          return 1;
-        }
-
-        break;
-      }
-
-      // Workaround for succeeds even if buffer cannot hold all returned information
-
-      if ((size/sizeof(pBuf[0]) - res) > 100)
-        break;
-    }
-
-    if (pBuf) {
-      for (char *pName = pBuf ; *pName ; pName += lstrlen(pName) + 1) {
-        static const char strangeChars[] = ":#&$?!{}()[]/\\ \t\r\n";
-
-        if (strpbrk(pName, strangeChars))
-          continue;  // skip strange names
-
-        CharUpper(pName);
-
-        if (!MatchPattern(pPatternUp, pName))
-          continue;
-
-        if (pNames) {
-          char *pNamesName;
-
-          for (pNamesName = pNames ; *pNamesName ; pNamesName += lstrlen(pNamesName) + 1) {
-            if (!lstrcmp(pNamesName, pName))
-              break;
-          }
-
-          if (*pNamesName)
-            continue;
-        }
-
-        DWORD iNamesEndNew = iNamesEnd + lstrlen(pName) + 1;
-        DWORD sizeNamesNew = (iNamesEndNew + 1) * sizeof(pNames[0]);
-
-        char *pNamesNew;
-
-        if (!pNames)
-          pNamesNew = (char *)LocalAlloc(LPTR, sizeNamesNew);
-        else
-          pNamesNew = (char *)LocalReAlloc(pNames, sizeNamesNew, LMEM_ZEROINIT|LMEM_MOVEABLE);
-
-        if (!pNamesNew) {
-          if (ShowError(MB_OKCANCEL, ERROR_NOT_ENOUGH_MEMORY, "LocalAlloc(%lu)", (unsigned long)size) == IDCANCEL) {
-            if (pNames)
-              LocalFree(pNames);
-
-            LocalFree(pPatternUp);
-            return 1;
-          }
-
-          break;
-        }
-
-        pNames = pNamesNew;
-
-        lstrcpy(pNames + iNamesEnd, pName);
-
-        iNamesEnd = iNamesEndNew;
-      }
-
-      LocalFree(pBuf);
-    }
-  }
-
-  if (pNames) {
-    for (char *pName = pNames ; *pName ; pName += lstrlen(pName) + 1)
-      Trace("%s\n", pName);
-
-    LocalFree(pNames);
-  }
-
-  LocalFree(pPatternUp);
 
   return 0;
 }
@@ -1106,9 +945,6 @@ int Help(const char *pProgName)
     "Options:\n"
     "  --output <file>              - file for output, default is console\n"
     "  --detail-prms                - show detailed parameters\n"
-    "  --silent                     - suppress dialogs if possible\n"
-    "  --no-update                  - do not update driver while install command\n"
-    "                                 execution (update command expected later)\n"
     );
   ConsoleWrite(
     "\n"
@@ -1123,18 +959,13 @@ int Help(const char *pProgName)
                                       C0C_PREF_PORT_NAME_B "<n>\n"
     "  disable all                  - disable all ports in current hardware profile\n"
     "  enable all                   - enable all ports in current hardware profile\n"
-    );
-  ConsoleWrite(
     "  change <portid> <prms>       - set parameters <prms> for port with\n"
     "                                 identifier <portid>\n"
     "  list                         - for each port show its identifier and\n"
     "                                 parameters\n"
     "  preinstall                   - preinstall driver\n"
     "  update                       - update driver\n"
-    "  reload                       - reload driver\n"
     "  uninstall                    - uninstall all ports and the driver\n"
-    "  busynames <pattern>          - show names that already in use and match the\n"
-    "                                 <pattern> (wildcards: '*' and '?')\n"
     "  quit                         - quit\n"
     "  help                         - print this help\n"
     );
@@ -1181,9 +1012,6 @@ int Help(const char *pProgName)
     "  %s%suninstall\n"
     , pProgName, (pProgName && *pProgName) ? " " : "");
   ConsoleWrite(
-    "  %s%sbusynames COM?*\n"
-    , pProgName, (pProgName && *pProgName) ? " " : "");
-  ConsoleWrite(
     "\n");
 
   return 1;
@@ -1194,9 +1022,7 @@ int Main(int argc, const char* argv[])
   if (!SetOutputFile(NULL))
     return 1;
 
-  Silent(FALSE);
   detailPrms = FALSE;
-  no_update = FALSE;
 
   while (argc > 1) {
     if (*argv[1] != '-')
@@ -1212,18 +1038,6 @@ int Main(int argc, const char* argv[])
     else
     if (!strcmp(argv[1], "--detail-prms")) {
       detailPrms = TRUE;
-      argv++;
-      argc--;
-    }
-    else
-    if (!strcmp(argv[1], "--silent")) {
-      Silent(TRUE);
-      argv++;
-      argc--;
-    }
-    else
-    if (!strcmp(argv[1], "--no-update")) {
-      no_update = TRUE;
       argv++;
       argc--;
     }
@@ -1244,11 +1058,6 @@ int Main(int argc, const char* argv[])
   else
   if (argc == 2 && !lstrcmpi(argv[1], "quit")) {
     return 0;
-  }
-  else
-  if (argc == 3 && !lstrcmpi(argv[1], "busynames")) {
-    SetTitle(C0C_SETUP_TITLE " (BUSY NAMES)");
-    return ShowBusyNames(argv[2]);
   }
 
   InfFile infFile(C0C_INF_NAME, C0C_INF_NAME);
@@ -1310,12 +1119,7 @@ int Main(int argc, const char* argv[])
   else
   if (argc == 2 && !lstrcmpi(argv[1], "update")) {
     SetTitle(C0C_SETUP_TITLE " (UPDATE)");
-    return Reload(infFile, TRUE);
-  }
-  else
-  if (argc == 2 && !lstrcmpi(argv[1], "reload")) {
-    SetTitle(C0C_SETUP_TITLE " (RELOAD)");
-    return Reload(infFile, FALSE);
+    return Update(infFile);
   }
   else
   if (argc == 2 && !lstrcmpi(argv[1], "uninstall")) {

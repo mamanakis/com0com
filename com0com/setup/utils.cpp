@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2008 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.7  2008/12/24 15:22:44  vfrolov
- * Added BusyMask::Clear() and BusyMask::DelNum()
- *
- * Revision 1.6  2007/09/20 12:37:06  vfrolov
- * Added SetLastError(ERROR_NOT_ENOUGH_MEMORY)
- *
  * Revision 1.5  2007/05/29 15:22:00  vfrolov
  * Fixed buffer overflow
  *
@@ -153,45 +147,10 @@ BOOL StrToInt(const char *pStr, int *pNum)
   return res;
 }
 ///////////////////////////////////////////////////////////////
-BOOL MatchPattern(const char *pPattern, const char *pStr)
+BusyMask::~BusyMask()
 {
-  for (;;) {
-    switch (*pPattern) {
-      case '*':
-        pPattern++;
-        do {
-          if (MatchPattern(pPattern, pStr))
-            return TRUE;
-        } while (*pStr++);
-
-        return FALSE;
-      case '?':
-        if (!*pStr)
-          return FALSE;
-
-        pStr++;
-        pPattern++;
-        break;
-      default:
-        if (*pPattern != *pStr)
-          return FALSE;
-
-        if (!*pStr)
-          return TRUE;
-
-        pStr++;
-        pPattern++;
-    }
-  }
-}
-///////////////////////////////////////////////////////////////
-void BusyMask::Clear()
-{
-  if (pBusyMask) {
+  if (pBusyMask)
     LocalFree(pBusyMask);
-    pBusyMask = NULL;
-    busyMaskLen = 0;
-  }
 }
 
 BOOL BusyMask::AddNum(int num)
@@ -221,18 +180,6 @@ BOOL BusyMask::AddNum(int num)
   pBusyMask[maskNum] |= mask;
 
   return TRUE;
-}
-
-void BusyMask::DelNum(int num)
-{
-  ULONG maskNum = num/(sizeof(*pBusyMask)*8);
-
-  if (maskNum >= busyMaskLen)
-    return;
-
-  ULONG mask = 1 << (num%(sizeof(*pBusyMask)*8));
-
-  pBusyMask[maskNum] &= ~mask;
 }
 
 BOOL BusyMask::IsFreeNum(int num) const

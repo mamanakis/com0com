@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2008 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.6  2008/12/24 15:22:44  vfrolov
- * Added BusyMask::Clear() and BusyMask::DelNum()
- *
- * Revision 1.5  2007/09/25 12:28:22  vfrolov
- * Implemented Stack class
- *
  * Revision 1.4  2007/01/11 15:03:43  vfrolov
  * Added STRTOK_R()
  *
@@ -47,16 +41,13 @@ int VSNPRINTF(char *pBuf, int size, const char *pFmt, va_list va);
 int SNPRINTF(char *pBuf, int size, const char *pFmt, ...);
 char *STRTOK_R(char *pStr, const char *pDelims, char **ppSave);
 BOOL StrToInt(const char *pStr, int *pNum);
-BOOL MatchPattern(const char *pPattern, const char *pStr);
 
 class BusyMask {
 public:
   BusyMask() : pBusyMask(NULL), busyMaskLen(0) {}
-  ~BusyMask() { Clear(); }
+  ~BusyMask();
 
-  void Clear();
   BOOL AddNum(int num);
-  void DelNum(int num);
   BOOL IsFreeNum(int num) const;
   int GetFirstFreeNum() const;
 private:

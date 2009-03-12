@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2008 Vyacheslav Frolov
+ * Copyright (c) 2005-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.10  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
- * Revision 1.9  2007/07/20 07:59:20  vfrolov
- * Fixed idleCount
- *
  * Revision 1.8  2007/06/09 08:49:47  vfrolov
  * Improved baudrate emulation
  *
@@ -56,11 +49,11 @@
  * Revision 1.1  2005/08/23 15:30:22  vfrolov
  * Initial revision
  *
+ *
  */
 
 #include "precomp.h"
 #include "delay.h"
-#include "noise.h"
 
 /*
  * FILE_ID used by HALT_UNLESS to put it on BSOD
@@ -99,24 +92,8 @@ VOID WriteDelayRoutine(
           pIoPort, FALSE,
           &queueToComplete);
 
-      if (pWriteDelay->idleCount > 3) {
-        if (pIoPort->brokeCharsProbability > 0 && pIoPort->pIoPortRemote->isOpen) {
-          SIZE_T idleChars = GetWriteLimit(pWriteDelay);
-
-          pWriteDelay->idleCount = 0;
-          pIoPort->brokeIdleChars += GetBrokenChars(pIoPort->brokeCharsProbability, idleChars);
-          pWriteDelay->sentFrames += idleChars;
-
-          if (pIoPort->brokeIdleChars > 0) {
-            ReadWrite(
-                pIoPort->pIoPortRemote, FALSE,
-                pIoPort, FALSE,
-                &queueToComplete);
-          }
-        } else {
+      if (pWriteDelay->idleCount > 3)
           StopWriteDelayTimer(pWriteDelay);
-        }
-      }
     }
 
     KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
@@ -177,22 +154,29 @@ VOID FreeWriteDelay(PC0C_IO_PORT pIoPort)
   }
 }
 
-VOID SetWriteDelay(PC0C_IO_PORT pIoPort)
+VOID SetWriteDelay(PC0C_FDOPORT_EXTENSION pDevExt)
 {
   PC0C_ADAPTIVE_DELAY pWriteDelay;
+  KIRQL oldIrql;
   C0C_DELAY_PARAMS params;
+  SERIAL_LINE_CONTROL lineControl;
 
-  pWriteDelay = pIoPort->pWriteDelay;
+  pWriteDelay = pDevExt->pIoPortLocal->pWriteDelay;
 
   if (!pWriteDelay)
     return;
 
-  params.baudRate = pIoPort->baudRate.BaudRate;
+  KeAcquireSpinLock(pDevExt->pIoPortLocal->pIoLock, &oldIrql);
+
+  KeAcquireSpinLockAtDpcLevel(&pDevExt->controlLock);
+  lineControl = pDevExt->lineControl;
+  params.baudRate = pDevExt->baudRate.BaudRate;
+  KeReleaseSpinLockFromDpcLevel(&pDevExt->controlLock);
 
   /* Startbit + WordLength */
-  params.decibits_per_frame = (1 + pIoPort->lineControl.WordLength) * 10;
+  params.decibits_per_frame = (1 + lineControl.WordLength) * 10;
 
-  switch (pIoPort->lineControl.Parity) {
+  switch (lineControl.Parity) {
   case NO_PARITY:
     break;
   default:
@@ -204,7 +188,7 @@ VOID SetWriteDelay(PC0C_IO_PORT pIoPort)
     break;
   }
 
-  switch (pIoPort->lineControl.StopBits) {
+  switch (lineControl.StopBits) {
   default:
   case STOP_BIT_1:
     params.decibits_per_frame += 10;
@@ -226,6 +210,8 @@ VOID SetWriteDelay(PC0C_IO_PORT pIoPort)
       StartWriteDelayTimer(pWriteDelay);
     }
   }
+
+  KeReleaseSpinLock(pDevExt->pIoPortLocal->pIoLock, oldIrql);
 }
 
 VOID StartWriteDelayTimer(PC0C_ADAPTIVE_DELAY pWriteDelay)

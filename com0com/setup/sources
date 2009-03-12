@@ -12,7 +12,6 @@ SOURCES= \
         params.cpp \
         devutils.cpp \
         portnum.cpp \
-        comdb.cpp \
         msg.cpp \
         utils.cpp \
         setup.rc \

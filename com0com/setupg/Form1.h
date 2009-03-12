@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2007-2009 Vyacheslav Frolov
+ * Copyright (c) 2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,17 +19,9 @@
  *
  *
  * $Log$
- * Revision 1.4  2008/05/04 09:56:47  vfrolov
- * Implemented HiddenMode option
- *
- * Revision 1.3  2008/04/08 06:52:12  vfrolov
- * Added pin OUT2
- *
- * Revision 1.2  2007/11/20 12:29:40  vfrolov
- * Fixed appearance for Vista
- *
  * Revision 1.1  2007/10/31 10:16:55  vfrolov
  * Initial revision
+ *
  *
  */
 
@@ -94,8 +86,6 @@ namespace SetupApp {
     private: System::Windows::Forms::CheckBox^  PlugInModeA;
     private: System::Windows::Forms::CheckBox^  EmuOverrunA;
     private: System::Windows::Forms::CheckBox^  EmuBrA;
-    private: System::Windows::Forms::CheckBox^  HiddenModeA;
-    private: System::Windows::Forms::CheckBox^  HiddenModeB;
     private: System::Windows::Forms::Label^  pinNameON;
     private: System::Windows::Forms::Label^  pinNameA_RX;
     private: System::Windows::Forms::Label^  pinNameA_DTR;
@@ -106,11 +96,9 @@ namespace SetupApp {
     private: System::Windows::Forms::Label^  pinNameA_CTS;
     private: System::Windows::Forms::Label^  pinNameA_RI;
     private: System::Windows::Forms::Label^  pinNameA_OUT1;
-    private: System::Windows::Forms::Label^  pinNameA_OUT2;
     private: System::Windows::Forms::Label^  pinNameA_OPEN;
     private: System::Windows::Forms::Label^  pinNameB_OPEN;
     private: System::Windows::Forms::Label^  pinNameB_OUT1;
-    private: System::Windows::Forms::Label^  pinNameB_OUT2;
     private: System::Windows::Forms::Label^  pinNameB_RI;
     private: System::Windows::Forms::Label^  pinNameB_CTS;
     private: System::Windows::Forms::Label^  pinNameB_RTS;
@@ -149,8 +137,6 @@ namespace SetupApp {
           this->PlugInModeA = (gcnew System::Windows::Forms::CheckBox());
           this->EmuOverrunA = (gcnew System::Windows::Forms::CheckBox());
           this->EmuBrA = (gcnew System::Windows::Forms::CheckBox());
-          this->HiddenModeA = (gcnew System::Windows::Forms::CheckBox());
-          this->HiddenModeB = (gcnew System::Windows::Forms::CheckBox());
           this->pinNameA_RX = (gcnew System::Windows::Forms::Label());
           this->pinNameA_DTR = (gcnew System::Windows::Forms::Label());
           this->pinNameA_TX = (gcnew System::Windows::Forms::Label());
@@ -160,11 +146,14 @@ namespace SetupApp {
           this->pinNameA_CTS = (gcnew System::Windows::Forms::Label());
           this->pinNameA_RI = (gcnew System::Windows::Forms::Label());
           this->pinNameA_OUT1 = (gcnew System::Windows::Forms::Label());
-          this->pinNameA_OUT2 = (gcnew System::Windows::Forms::Label());
           this->pinNameA_OPEN = (gcnew System::Windows::Forms::Label());
+          this->pairList = (gcnew System::Windows::Forms::TreeView());
+          this->buttonRemovePair = (gcnew System::Windows::Forms::Button());
+          this->buttonAddPair = (gcnew System::Windows::Forms::Button());
+          this->buttonApply = (gcnew System::Windows::Forms::Button());
+          this->buttonReset = (gcnew System::Windows::Forms::Button());
           this->pinNameB_OPEN = (gcnew System::Windows::Forms::Label());
           this->pinNameB_OUT1 = (gcnew System::Windows::Forms::Label());
-          this->pinNameB_OUT2 = (gcnew System::Windows::Forms::Label());
           this->pinNameB_RI = (gcnew System::Windows::Forms::Label());
           this->pinNameB_CTS = (gcnew System::Windows::Forms::Label());
           this->pinNameB_RTS = (gcnew System::Windows::Forms::Label());
@@ -173,11 +162,6 @@ namespace SetupApp {
           this->pinNameB_TX = (gcnew System::Windows::Forms::Label());
           this->pinNameB_DTR = (gcnew System::Windows::Forms::Label());
           this->pinNameB_RX = (gcnew System::Windows::Forms::Label());
-          this->pairList = (gcnew System::Windows::Forms::TreeView());
-          this->buttonRemovePair = (gcnew System::Windows::Forms::Button());
-          this->buttonAddPair = (gcnew System::Windows::Forms::Button());
-          this->buttonApply = (gcnew System::Windows::Forms::Button());
-          this->buttonReset = (gcnew System::Windows::Forms::Button());
           (cli::safe_cast<System::ComponentModel::ISupportInitialize^  >(this->picturePinMap))->BeginInit();
           this->SuspendLayout();
           // 
@@ -281,22 +265,6 @@ namespace SetupApp {
           this->EmuBrA->UseVisualStyleBackColor = true;
           this->EmuBrA->CheckedChanged += gcnew System::EventHandler(this, &Form1::EmuBrA_Changed);
           // 
-          // HiddenModeA
-          // 
-          resources->ApplyResources(this->HiddenModeA, L"HiddenModeA");
-          this->HiddenModeA->Name = L"HiddenModeA";
-          this->toolTip1->SetToolTip(this->HiddenModeA, resources->GetString(L"HiddenModeA.ToolTip"));
-          this->HiddenModeA->UseVisualStyleBackColor = true;
-          this->HiddenModeA->CheckedChanged += gcnew System::EventHandler(this, &Form1::HiddenModeA_Changed);
-          // 
-          // HiddenModeB
-          // 
-          resources->ApplyResources(this->HiddenModeB, L"HiddenModeB");
-          this->HiddenModeB->Name = L"HiddenModeB";
-          this->toolTip1->SetToolTip(this->HiddenModeB, resources->GetString(L"HiddenModeB.ToolTip"));
-          this->HiddenModeB->UseVisualStyleBackColor = true;
-          this->HiddenModeB->CheckedChanged += gcnew System::EventHandler(this, &Form1::HiddenModeB_Changed);
-          // 
           // pinNameA_RX
           // 
           resources->ApplyResources(this->pinNameA_RX, L"pinNameA_RX");
@@ -351,17 +319,47 @@ namespace SetupApp {
           this->pinNameA_OUT1->Name = L"pinNameA_OUT1";
           this->toolTip1->SetToolTip(this->pinNameA_OUT1, resources->GetString(L"pinNameA_OUT1.ToolTip"));
           // 
-          // pinNameA_OUT2
-          // 
-          resources->ApplyResources(this->pinNameA_OUT2, L"pinNameA_OUT2");
-          this->pinNameA_OUT2->Name = L"pinNameA_OUT2";
-          this->toolTip1->SetToolTip(this->pinNameA_OUT2, resources->GetString(L"pinNameA_OUT2.ToolTip"));
-          // 
           // pinNameA_OPEN
           // 
           resources->ApplyResources(this->pinNameA_OPEN, L"pinNameA_OPEN");
           this->pinNameA_OPEN->Name = L"pinNameA_OPEN";
           this->toolTip1->SetToolTip(this->pinNameA_OPEN, resources->GetString(L"pinNameA_OPEN.ToolTip"));
+          // 
+          // pairList
+          // 
+          this->pairList->HideSelection = false;
+          resources->ApplyResources(this->pairList, L"pairList");
+          this->pairList->Name = L"pairList";
+          this->pairList->AfterSelect += gcnew System::Windows::Forms::TreeViewEventHandler(this, &Form1::pairsList_AfterSelect);
+          this->pairList->BeforeSelect += gcnew System::Windows::Forms::TreeViewCancelEventHandler(this, &Form1::pairsList_BeforeSelect);
+          // 
+          // buttonRemovePair
+          // 
+          resources->ApplyResources(this->buttonRemovePair, L"buttonRemovePair");
+          this->buttonRemovePair->Name = L"buttonRemovePair";
+          this->buttonRemovePair->UseVisualStyleBackColor = true;
+          this->buttonRemovePair->Click += gcnew System::EventHandler(this, &Form1::buttonRemovePair_Click);
+          // 
+          // buttonAddPair
+          // 
+          resources->ApplyResources(this->buttonAddPair, L"buttonAddPair");
+          this->buttonAddPair->Name = L"buttonAddPair";
+          this->buttonAddPair->UseVisualStyleBackColor = true;
+          this->buttonAddPair->Click += gcnew System::EventHandler(this, &Form1::buttonAddPair_Click);
+          // 
+          // buttonApply
+          // 
+          resources->ApplyResources(this->buttonApply, L"buttonApply");
+          this->buttonApply->Name = L"buttonApply";
+          this->buttonApply->UseVisualStyleBackColor = true;
+          this->buttonApply->Click += gcnew System::EventHandler(this, &Form1::buttonApply_Click);
+          // 
+          // buttonReset
+          // 
+          resources->ApplyResources(this->buttonReset, L"buttonReset");
+          this->buttonReset->Name = L"buttonReset";
+          this->buttonReset->UseVisualStyleBackColor = true;
+          this->buttonReset->Click += gcnew System::EventHandler(this, &Form1::buttonReset_Click);
           // 
           // pinNameB_OPEN
           // 
@@ -374,12 +372,6 @@ namespace SetupApp {
           resources->ApplyResources(this->pinNameB_OUT1, L"pinNameB_OUT1");
           this->pinNameB_OUT1->Name = L"pinNameB_OUT1";
           this->toolTip1->SetToolTip(this->pinNameB_OUT1, resources->GetString(L"pinNameB_OUT1.ToolTip"));
-          // 
-          // pinNameB_OUT2
-          // 
-          resources->ApplyResources(this->pinNameB_OUT2, L"pinNameB_OUT2");
-          this->pinNameB_OUT2->Name = L"pinNameB_OUT2";
-          this->toolTip1->SetToolTip(this->pinNameB_OUT2, resources->GetString(L"pinNameB_OUT2.ToolTip"));
           // 
           // pinNameB_RI
           // 
@@ -429,51 +421,12 @@ namespace SetupApp {
           this->pinNameB_RX->Name = L"pinNameB_RX";
           this->toolTip1->SetToolTip(this->pinNameB_RX, resources->GetString(L"pinNameB_RX.ToolTip"));
           // 
-          // pairList
-          // 
-          this->pairList->HideSelection = false;
-          resources->ApplyResources(this->pairList, L"pairList");
-          this->pairList->Name = L"pairList";
-          this->pairList->AfterSelect += gcnew System::Windows::Forms::TreeViewEventHandler(this, &Form1::pairsList_AfterSelect);
-          this->pairList->BeforeSelect += gcnew System::Windows::Forms::TreeViewCancelEventHandler(this, &Form1::pairsList_BeforeSelect);
-          // 
-          // buttonRemovePair
-          // 
-          resources->ApplyResources(this->buttonRemovePair, L"buttonRemovePair");
-          this->buttonRemovePair->Name = L"buttonRemovePair";
-          this->buttonRemovePair->UseVisualStyleBackColor = true;
-          this->buttonRemovePair->Click += gcnew System::EventHandler(this, &Form1::buttonRemovePair_Click);
-          // 
-          // buttonAddPair
-          // 
-          resources->ApplyResources(this->buttonAddPair, L"buttonAddPair");
-          this->buttonAddPair->Name = L"buttonAddPair";
-          this->buttonAddPair->UseVisualStyleBackColor = true;
-          this->buttonAddPair->Click += gcnew System::EventHandler(this, &Form1::buttonAddPair_Click);
-          // 
-          // buttonApply
-          // 
-          resources->ApplyResources(this->buttonApply, L"buttonApply");
-          this->buttonApply->Name = L"buttonApply";
-          this->buttonApply->UseVisualStyleBackColor = true;
-          this->buttonApply->Click += gcnew System::EventHandler(this, &Form1::buttonApply_Click);
-          // 
-          // buttonReset
-          // 
-          resources->ApplyResources(this->buttonReset, L"buttonReset");
-          this->buttonReset->Name = L"buttonReset";
-          this->buttonReset->UseVisualStyleBackColor = true;
-          this->buttonReset->Click += gcnew System::EventHandler(this, &Form1::buttonReset_Click);
-          // 
           // Form1
           // 
           resources->ApplyResources(this, L"$this");
           this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
-          this->Controls->Add(this->HiddenModeA);
-          this->Controls->Add(this->HiddenModeB);
           this->Controls->Add(this->pinNameB_OPEN);
           this->Controls->Add(this->pinNameB_OUT1);
-          this->Controls->Add(this->pinNameB_OUT2);
           this->Controls->Add(this->pinNameB_RI);
           this->Controls->Add(this->pinNameB_CTS);
           this->Controls->Add(this->pinNameB_RTS);
@@ -484,7 +437,6 @@ namespace SetupApp {
           this->Controls->Add(this->pinNameB_RX);
           this->Controls->Add(this->pinNameA_OPEN);
           this->Controls->Add(this->pinNameA_OUT1);
-          this->Controls->Add(this->pinNameA_OUT2);
           this->Controls->Add(this->pinNameA_RI);
           this->Controls->Add(this->pinNameA_CTS);
           this->Controls->Add(this->pinNameA_RTS);
@@ -539,15 +491,6 @@ namespace SetupApp {
           control->Text = value;
         }
 
-        bool IsValidValue(String ^key, String ^value) {
-          if (key == "portname") {
-            if (!pairs->IsValidName(value))
-              return false;
-          }
-
-          return true;
-        }
-
         /////////////////////////////////////////////////////////////////////
         #define DeclareControlPair(controlClass, control) \
           array<controlClass ^> ^control##s; \
@@ -565,7 +508,7 @@ namespace SetupApp {
               String ^key = (gcnew String(#control))->ToLower(); \
               String ^value = GetControlValue(control##s[i])->ToUpper(); \
               if (pairs[pairList->SelectedNode->Name][i][key] != value) { \
-                control##s[i]->ForeColor = (IsValidValue(key, value) ? Color::Blue : Color::Red); \
+                control##s[i]->ForeColor = Color::Blue; \
                 return; \
               } \
             } \
@@ -602,7 +545,6 @@ namespace SetupApp {
         DeclareControlPair(CheckBox, EmuOverrun)
         DeclareControlPair(CheckBox, PlugInMode)
         DeclareControlPair(CheckBox, ExclusiveMode)
-        DeclareControlPair(CheckBox, HiddenMode)
 
         #define ForEachControlPair(func) \
           PortName_##func; \
@@ -610,7 +552,6 @@ namespace SetupApp {
           EmuOverrun_##func; \
           PlugInMode_##func; \
           ExclusiveMode_##func; \
-          HiddenMode_##func; \
 
     private:
 
@@ -632,7 +573,7 @@ namespace SetupApp {
 
             TreeNode ^pair;
             bool pairExpand;
-
+            
             if (pairList->Nodes->ContainsKey(kvpPair.Key)) {
               pair = pairList->Nodes[kvpPair.Key];
               pairExpand = pair->IsExpanded;
@@ -726,7 +667,7 @@ namespace SetupApp {
                 pairList->SelectedNode->Text);
 
             System::Windows::Forms::DialogResult res;
-
+            
             res = MessageBox::Show(this, msg, "Apply", MessageBoxButtons::YesNoCancel);
 
             if (res == System::Windows::Forms::DialogResult::Cancel) {
@@ -763,7 +704,7 @@ namespace SetupApp {
         Void picturePinMap_Paint(Object ^/*sender*/, PaintEventArgs ^e) {
             pinMap->Paint(e, picturePinMap);
         }
-
+ 
         Void picturePinMap_MouseDown(Object ^/*sender*/, MouseEventArgs ^e) {
             pinMap->MouseDown(e);
             picturePinMap->Invalidate();
@@ -792,7 +733,7 @@ namespace SetupApp {
     private:
 
         Void pairsList_BeforeSelect(Object ^/*sender*/, TreeViewCancelEventArgs ^e) {
-          if (!SaveChanges())
+          if (e->Node->Level != 0 || !SaveChanges())
             e->Cancel = true;
         }
 
@@ -816,7 +757,7 @@ namespace SetupApp {
                 pairList->SelectedNode->Text);
 
             System::Windows::Forms::DialogResult res;
-
+            
             res = MessageBox::Show(this, msg, "", MessageBoxButtons::YesNo);
 
             if (res == System::Windows::Forms::DialogResult::Yes) {

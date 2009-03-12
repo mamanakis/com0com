@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2007-2009 Vyacheslav Frolov
+ * Copyright (c) 2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,8 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.1  2007/10/31 10:16:55  vfrolov
- * Initial revision
  *
  */
 
@@ -89,8 +87,6 @@ void PortPairs::Init()
 
   for (int i = 0 ; i < lines->Length ; i++)
     ParseLine(lines[i]);
-
-  LoadBusyNames();
 }
 
 String ^PortPairs::AddPair()
@@ -107,8 +103,6 @@ String ^PortPairs::AddPair()
     if (res == nullptr)
       res = keyPair;
   }
-
-  LoadBusyNames();
 
   return res;
 }
@@ -138,24 +132,4 @@ void PortPairs::ChangePair(String ^keyPair, PortPair ^pairChanges)
   }
 
   Init();
-}
-
-bool PortPairs::IsValidName(String ^name)
-{
-  if (busyNames == nullptr)
-    return true;
-
-  for each (String ^busyName in busyNames) {
-    if (busyName->ToUpper() == name->ToUpper())
-      return false;
-  }
-
-  return true;
-}
-
-void PortPairs::LoadBusyNames()
-{
-  String ^cmd = "busynames *";
-
-  busyNames = ExecCommand::ExecCommand(parent, cmd);
 }

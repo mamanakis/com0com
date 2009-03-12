@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2008 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.5  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
- * Revision 1.4  2007/06/01 16:22:40  vfrolov
- * Implemented plug-in and exclusive modes
- *
  * Revision 1.3  2006/10/27 12:44:14  vfrolov
  * Fixed typecasting
  *
@@ -119,7 +112,6 @@ NTSTATUS QueryWmiDataBlock(
   ULONG size;
   KIRQL oldIrql;
   PC0C_FDOPORT_EXTENSION pDevExt = (PC0C_FDOPORT_EXTENSION)pDevObj->DeviceExtension;
-  PC0C_IO_PORT pIoPort = pDevExt->pIoPortLocal;
 
   UNREFERENCED_PARAMETER(instanceIndex);
   UNREFERENCED_PARAMETER(instanceCount);
@@ -152,14 +144,14 @@ NTSTATUS QueryWmiDataBlock(
       break;
     }
 
-    KeAcquireSpinLock(pIoPort->pIoLock, &oldIrql);
+    KeAcquireSpinLock(&pDevExt->controlLock, &oldIrql);
 
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->BaudRate = pIoPort->baudRate.BaudRate;
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->BitsPerByte = pIoPort->lineControl.WordLength;
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->BaudRate = pDevExt->baudRate.BaudRate;
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->BitsPerByte = pDevExt->lineControl.WordLength;
 
     ((PSERIAL_WMI_COMM_DATA)pBuf)->ParityCheckEnable = TRUE;
 
-    switch (pIoPort->lineControl.Parity) {
+    switch (pDevExt->lineControl.Parity) {
     default:
     case NO_PARITY:
       ((PSERIAL_WMI_COMM_DATA)pBuf)->Parity = SERIAL_WMI_PARITY_NONE;
@@ -179,7 +171,7 @@ NTSTATUS QueryWmiDataBlock(
       break;
     }
 
-    switch (pIoPort->lineControl.StopBits) {
+    switch (pDevExt->lineControl.StopBits) {
     default:
     case STOP_BIT_1:
       ((PSERIAL_WMI_COMM_DATA)pBuf)->StopBits = SERIAL_WMI_STOP_1;
@@ -192,12 +184,16 @@ NTSTATUS QueryWmiDataBlock(
       break;
     }
 
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->XoffCharacter = pIoPort->specialChars.XoffChar;
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->XoffXmitThreshold = pIoPort->handFlow.XoffLimit;
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->XonCharacter = pIoPort->specialChars.XonChar;
-    ((PSERIAL_WMI_COMM_DATA)pBuf)->XonXmitThreshold = pIoPort->handFlow.XonLimit;
+    KeReleaseSpinLock(&pDevExt->controlLock, oldIrql);
 
-    KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
+    KeAcquireSpinLock(pDevExt->pIoPortLocal->pIoLock, &oldIrql);
+
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->XoffCharacter = pDevExt->pIoPortLocal->specialChars.XoffChar;
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->XoffXmitThreshold = pDevExt->pIoPortLocal->handFlow.XoffLimit;
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->XonCharacter = pDevExt->pIoPortLocal->specialChars.XonChar;
+    ((PSERIAL_WMI_COMM_DATA)pBuf)->XonXmitThreshold = pDevExt->pIoPortLocal->handFlow.XonLimit;
+
+    KeReleaseSpinLock(pDevExt->pIoPortLocal->pIoLock, oldIrql);
 
     ((PSERIAL_WMI_COMM_DATA)pBuf)->MaximumBaudRate = 128L * 1024L;
     ((PSERIAL_WMI_COMM_DATA)pBuf)->MaximumOutputBufferSize = (ULONG)-1L;
@@ -250,16 +246,16 @@ NTSTATUS QueryWmiDataBlock(
       break;
     }
 
-    KeAcquireSpinLock(pIoPort->pIoLock, &oldIrql);
+    KeAcquireSpinLock(pDevExt->pIoPortLocal->pIoLock, &oldIrql);
 
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->ReceivedCount = pIoPort->perfStats.ReceivedCount;
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->TransmittedCount = pIoPort->perfStats.TransmittedCount;
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->FrameErrorCount = pIoPort->perfStats.FrameErrorCount;
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->SerialOverrunErrorCount = pIoPort->perfStats.SerialOverrunErrorCount;
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->BufferOverrunErrorCount = pIoPort->perfStats.BufferOverrunErrorCount;
-    ((PSERIAL_WMI_PERF_DATA)pBuf)->ParityErrorCount = pIoPort->perfStats.ParityErrorCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->ReceivedCount = pDevExt->pIoPortLocal->perfStats.ReceivedCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->TransmittedCount = pDevExt->pIoPortLocal->perfStats.TransmittedCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->FrameErrorCount = pDevExt->pIoPortLocal->perfStats.FrameErrorCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->SerialOverrunErrorCount = pDevExt->pIoPortLocal->perfStats.SerialOverrunErrorCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->BufferOverrunErrorCount = pDevExt->pIoPortLocal->perfStats.BufferOverrunErrorCount;
+    ((PSERIAL_WMI_PERF_DATA)pBuf)->ParityErrorCount = pDevExt->pIoPortLocal->perfStats.ParityErrorCount;
 
-    KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
+    KeReleaseSpinLock(pDevExt->pIoPortLocal->pIoLock, oldIrql);
 
     status = STATUS_SUCCESS;
     break;
@@ -386,9 +382,9 @@ NTSTATUS c0cSystemControlDispatch(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
   NTSTATUS status;
   PC0C_COMMON_EXTENSION pDevExt = pDevObj->DeviceExtension;
 
-#if ENABLE_TRACING
+#if DBG
   ULONG code = IoGetCurrentIrpStackLocation(pIrp)->MinorFunction;
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   HALT_UNLESS2(IoGetCurrentIrpStackLocation(pIrp)->MajorFunction == IRP_MJ_SYSTEM_CONTROL,
       IoGetCurrentIrpStackLocation(pIrp)->MajorFunction,
@@ -413,10 +409,10 @@ NTSTATUS c0cSystemControlDispatch(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
   }
 
-#if ENABLE_TRACING
+#if DBG
   if (status != STATUS_SUCCESS)
     TraceCode(pDevExt, "WMI_", codeNameTableWmi, code, &status);
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   return status;
 }
