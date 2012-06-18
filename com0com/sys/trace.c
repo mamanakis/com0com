@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2011 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,38 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.39  2011/07/26 16:06:33  vfrolov
- * Added PID tracing on IRP_MJ_CLOSE
- *
- * Revision 1.38  2011/07/12 18:22:02  vfrolov
- * Discarded WDM garbage (fixed timestamp localization)
- * Added IOCTL_SERIAL_SET_FIFO_CONTROL value tracing
- *
- * Revision 1.37  2010/08/09 05:51:16  vfrolov
- * Fixed BSOD on tracing broken IRP_MN_QUERY_DEVICE_RELATIONS
- *
- * Revision 1.36  2010/08/04 13:12:04  vfrolov
- * Fixed null string tracing
- *
- * Revision 1.35  2010/05/27 11:02:11  vfrolov
- * Added multiline tracing for IRP_MN_QUERY_ID
- *
- * Revision 1.34  2009/05/22 14:25:39  vfrolov
- * Optimized for trace disabled mode
- *
- * Revision 1.33  2009/05/20 13:35:36  vfrolov
- * United closely IRP function name printing code
- *
- * Revision 1.32  2008/12/02 16:10:09  vfrolov
- * Separated tracing and debuging
- *
- * Revision 1.31  2008/06/10 11:24:20  vfrolov
- * Disabled tracing if traceFileName is empty
- *
- * Revision 1.30  2008/04/08 10:37:56  vfrolov
- * Implemented ability to set individual pins with extended
- * IOCTL_SERIAL_SET_MODEM_CONTROL and IOCTL_SERIAL_GET_MODEM_CONTROL
- *
  * Revision 1.29  2008/03/14 15:28:39  vfrolov
  * Implemented ability to get paired port settings with
  * extended IOCTL_SERIAL_LSRMST_INSERT
@@ -150,7 +118,7 @@
 
 #include "precomp.h"
 
-#if ENABLE_TRACING
+#if DBG
 
 #include "version.h"
 
@@ -210,9 +178,12 @@ typedef struct _TRACE_DATA {
 
 } TRACE_DATA, *PTRACE_DATA;
 /********************************************************************/
-PTRACE_DATA pTraceData = NULL;
+static PTRACE_DATA pTraceData = NULL;
 static PDRIVER_OBJECT pDrvObj;
 /********************************************************************/
+#define TRACE_FILE_OK (pTraceData != NULL)
+/********************************************************************/
+
 VOID QueryRegistryTrace(IN PUNICODE_STRING pRegistryPath)
 {
   NTSTATUS status;
@@ -226,7 +197,7 @@ VOID QueryRegistryTrace(IN PUNICODE_STRING pRegistryPath)
   StrAppendStr0(&status, &traceRegistryPath, L"\\Trace");
 
   if (!NT_SUCCESS(status)) {
-    SysLogDrv(pDrvObj, status, L"QueryRegistryTrace FAIL");
+    SysLog(pDrvObj, status, L"QueryRegistryTrace FAIL");
     return;
   }
 
@@ -270,7 +241,7 @@ VOID QueryRegistryTraceEnable(IN PUNICODE_STRING pRegistryPath)
   StrAppendStr0(&status, &traceRegistryPath, L"\\Trace\\Enable");
 
   if (!NT_SUCCESS(status)) {
-    SysLogDrv(pDrvObj, status, L"QueryRegistryTraceEnable FAIL");
+    SysLog(pDrvObj, status, L"QueryRegistryTraceEnable FAIL");
     return;
   }
 
@@ -375,9 +346,6 @@ PCHAR AnsiStrCopyStr(
   SIZE_T len, size;
   PCHAR pStrTmp;
 
-  if (pStr == NULL)
-    pStr = "(null)";
-
   pStrTmp = pStr;
 
   while (*(pStrTmp++))
@@ -402,33 +370,17 @@ PCHAR AnsiStrCopyStr(
 PCHAR AnsiStrCopyStrW(
     PCHAR pDestStr,
     PSIZE_T pSize,
-    PWCHAR pStr,
-    BOOLEAN multiStr)
+    PWCHAR pStr)
 {
   SIZE_T len, size;
   PWCHAR pStrTmp;
 
-  if (pStr == NULL)
-    pStr = L"(null)" L"\0";
-
   pStrTmp = pStr;
 
-  if (multiStr) {
-    do {
-      while (*(pStrTmp++))
-        ;
-    } while (*(pStrTmp++));
-  }
-  else {
-    while (*(pStrTmp++))
-      ;
-  }
+  while (*(pStrTmp++))
+    ;
 
   len = pStrTmp - pStr;
-
-  if (multiStr)
-    len--;
-
   size = *pSize;
 
   if (len > size)
@@ -438,9 +390,6 @@ PCHAR AnsiStrCopyStrW(
     SIZE_T i;
 
     for (i = 0 ; i < len - 1 ; i++) {
-      if (pStr[i] == 0)
-        pDestStr[i] = '"';
-      else
       if ((pStr[i] & 0xFF00) == 0)
         pDestStr[i] = (CHAR)(pStr[i]);
       else
@@ -544,7 +493,7 @@ PCHAR _AnsiStrVaFormat(
         }
         case 'S': {
           PWCHAR pStr = va_arg(va, PWCHAR);
-          pDestStr = AnsiStrCopyStrW(pDestStr, &size, pStr, FALSE);
+          pDestStr = AnsiStrCopyStrW(pDestStr, &size, pStr);
           format = FALSE;
           break;
         }
@@ -612,7 +561,7 @@ PCHAR AnsiStrVaFormat(
   try {
     return _AnsiStrVaFormat(pDestStr, pSize, pFmt, va);
   } except (EXCEPTION_EXECUTE_HANDLER) {
-    SysLogDrv(pDrvObj, GetExceptionCode(), L"AnsiStrVaFormat EXCEPTION");
+    SysLog(pDrvObj, GetExceptionCode(), L"AnsiStrVaFormat EXCEPTION");
     *pSize = oldSize;
     return pDestStr;
   }
@@ -950,12 +899,21 @@ PCHAR AnsiStrCopyPerfStats(
 VOID GetTimeFields(PTIME_FIELDS pTimeFields)
 {
   LARGE_INTEGER systemTime;
-  LARGE_INTEGER localTime;
 
   KeQuerySystemTime(&systemTime);
-  ExSystemTimeToLocalTime(&systemTime, &localTime);
 
-  RtlTimeToTimeFields(&localTime, pTimeFields);
+#ifndef _WDMDDK_
+  {
+    LARGE_INTEGER localTime;
+    ExSystemTimeToLocalTime(&systemTime, &localTime);
+    systemTime = localTime;
+  }
+#else
+  #define LOCAL_TIME_SHIFT (3*60*60)
+  systemTime.QuadPart += (LONGLONG)(10000)*1000*LOCAL_TIME_SHIFT;
+#endif
+
+  RtlTimeToTimeFields(&systemTime, pTimeFields);
 }
 
 PCHAR AnsiStrCopyTimeFields(
@@ -976,6 +934,7 @@ PCHAR AnsiStrCopyTimeFields(
 /********************************************************************/
 
 NTSTATUS TraceWrite(
+    IN PVOID pIoObject,
     IN HANDLE handle,
     IN PCHAR pStr)
 {
@@ -998,15 +957,18 @@ NTSTATUS TraceWrite(
 
   if (!NT_SUCCESS(status)) {
     pTraceData->errorCount++;
-    SysLogDrv(pDrvObj, status, L"TraceWrite ZwWriteFile FAIL");
+    SysLog(pIoObject, status, L"TraceWrite ZwWriteFile FAIL");
   }
 
   return status;
 }
 
-VOID TraceOutput(IN PCHAR pStr)
+VOID TraceOutput(
+    IN PC0C_COMMON_EXTENSION pDevExt,
+    IN PCHAR pStr)
 {
   NTSTATUS status;
+  PVOID pIoObject;
   HANDLE handle;
   OBJECT_ATTRIBUTES objectAttributes;
   IO_STATUS_BLOCK ioStatusBlock;
@@ -1014,7 +976,7 @@ VOID TraceOutput(IN PCHAR pStr)
   if (pTraceData->errorCount > TRACE_ERROR_LIMIT) {
     if (pTraceData->errorCount < (TRACE_ERROR_LIMIT + 100)) {
       pTraceData->errorCount += 100;
-      SysLogDrv(pDrvObj, STATUS_SUCCESS, L"Trace disabled");
+      SysLog(pDrvObj, STATUS_SUCCESS, L"Trace disabled");
     }
     return;
   }
@@ -1052,6 +1014,11 @@ VOID TraceOutput(IN PCHAR pStr)
 
     return;
   }
+
+  if (pDevExt)
+    pIoObject = pDevExt->pDevObj;
+  else
+    pIoObject = pDrvObj;
 
   HALT_UNLESS(TRACE_FILE_OK);
   InitializeObjectAttributes(
@@ -1107,7 +1074,7 @@ VOID TraceOutput(IN PCHAR pStr)
         KeReleaseSpinLock(&pTraceData->irqlBuf.lock, oldIrql);
 
         if (lenBuf)
-          TraceWrite(handle, pBuf->buf);
+          TraceWrite(pIoObject, handle, pBuf->buf);
       }
 
       skipped = InterlockedExchange(&pTraceData->skippedTraces, 0);
@@ -1116,7 +1083,7 @@ VOID TraceOutput(IN PCHAR pStr)
         SIZE_T tmp_size = size;
 
         AnsiStrFormat(pDestStr, &tmp_size, "*** skipped %lu lines ***\r\n", (long)skipped);
-        TraceWrite(handle, pBuf->buf);
+        TraceWrite(pIoObject, handle, pBuf->buf);
       }
 
       if (pStr) {
@@ -1127,7 +1094,7 @@ VOID TraceOutput(IN PCHAR pStr)
         pDestStr = AnsiStrCopyTimeFields(pDestStr, &size, &timeFields);
         pDestStr = AnsiStrFormat(pDestStr, &size, " %s\r\n", pStr);
 
-        TraceWrite(handle, pBuf->buf);
+        TraceWrite(pIoObject, handle, pBuf->buf);
       }
 
       FreeTraceBuf(pBuf);
@@ -1137,12 +1104,12 @@ VOID TraceOutput(IN PCHAR pStr)
 
     if (!NT_SUCCESS(status)) {
       pTraceData->errorCount++;
-      SysLogDrv(pDrvObj, status, L"TraceOutput ZwClose FAIL");
+      SysLog(pIoObject, status, L"TraceOutput ZwClose FAIL");
     }
   }
   else {
     pTraceData->errorCount++;
-    SysLogDrv(pDrvObj, status, L"TraceOutput ZwCreateFile FAIL");
+    SysLog(pIoObject, status, L"TraceOutput ZwCreateFile FAIL");
   }
 }
 /********************************************************************/
@@ -1157,8 +1124,6 @@ VOID TraceF(
   SIZE_T size;
   va_list va;
 
-  HALT_UNLESS(TRACE_FILE_OK);
-
   pBuf = AllocTraceBuf();
   if (!pBuf)
     return;
@@ -1172,7 +1137,7 @@ VOID TraceF(
   pDestStr = AnsiStrVaFormat(pDestStr, &size, pFmt, va);
   va_end(va);
 
-  TraceOutput(pBuf->buf);
+  TraceOutput(pDevExt, pBuf->buf);
   FreeTraceBuf(pBuf);
 }
 /********************************************************************/
@@ -1196,7 +1161,7 @@ VOID TraceOpen(
   pTraceData = (PTRACE_DATA)C0C_ALLOCATE_POOL(NonPagedPool, sizeof(*pTraceData));
 
   if (!pTraceData) {
-    SysLogDrv(pDrvObj, STATUS_INSUFFICIENT_RESOURCES, L"TraceEnable C0C_ALLOCATE_POOL FAIL");
+    SysLog(pDrvObj, STATUS_INSUFFICIENT_RESOURCES, L"TraceEnable C0C_ALLOCATE_POOL FAIL");
     return;
   }
 
@@ -1208,7 +1173,7 @@ VOID TraceOpen(
   QueryRegistryTrace(pRegistryPath);
   QueryRegistryTraceEnable(pRegistryPath);
 
-  if (!pTraceData->traceFileName.Buffer || !pTraceData->traceFileName.Length)
+  if (!pTraceData->traceFileName.Buffer)
     TraceDisable();
 
   if (TRACE_FILE_OK) {
@@ -1222,7 +1187,7 @@ VOID TraceOpen(
     StrAppendStr(&status, &msg, pTraceData->traceFileName.Buffer, pTraceData->traceFileName.Length);
 
     if (NT_SUCCESS(status))
-      SysLogDrv(pDrvObj, status, msg.Buffer);
+      SysLog(pDrvObj, status, msg.Buffer);
 
     StrFree(&msg);
 
@@ -1231,7 +1196,7 @@ VOID TraceOpen(
 
     if (pTraceData->errorCount) {
       TraceDisable();
-      SysLogDrv(pDrvObj, STATUS_SUCCESS, L"Trace disabled");
+      SysLog(pDrvObj, STATUS_SUCCESS, L"Trace disabled");
     }
   }
 }
@@ -1246,28 +1211,28 @@ VOID TraceClose()
   TraceDisable();
 }
 
-VOID InternalTrace0(
+VOID Trace0(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PWCHAR pStr)
 {
-  if (!pStr)
+  if (!TRACE_FILE_OK || !pStr)
     return;
 
   TraceF(pDevExt, "%S", pStr);
 }
 
-VOID InternalTrace00(
+VOID Trace00(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PWCHAR pStr1,
     IN PWCHAR pStr2)
 {
-  if (!pStr1 || !pStr2)
+  if (!TRACE_FILE_OK || !pStr1 || !pStr2)
     return;
 
   TraceF(pDevExt, "%S%S", pStr1, pStr2);
 }
 
-VOID InternalTraceCode(
+VOID TraceCode(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PCHAR pHead,
     IN PCODE2NAME pTable,
@@ -1278,7 +1243,8 @@ VOID InternalTraceCode(
   PCHAR pDestStr;
   SIZE_T size;
 
-  HALT_UNLESS(TRACE_FILE_OK);
+  if (!TRACE_FILE_OK)
+    return;
 
   pBuf = AllocTraceBuf();
   if (!pBuf)
@@ -1294,11 +1260,11 @@ VOID InternalTraceCode(
     pDestStr = AnsiStrCopyCode(pDestStr, &size, *pStatus, codeNameTableStatus, "0x", 16);
   }
 
-  TraceOutput(pBuf->buf);
+  TraceOutput(pDevExt, pBuf->buf);
   FreeTraceBuf(pBuf);
 }
 
-VOID InternalTraceMask(
+VOID TraceMask(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PCHAR pHead,
     IN PCODE2NAME pTable,
@@ -1308,7 +1274,8 @@ VOID InternalTraceMask(
   PCHAR pDestStr;
   SIZE_T size;
 
-  HALT_UNLESS(TRACE_FILE_OK);
+  if (!TRACE_FILE_OK)
+    return;
 
   pBuf = AllocTraceBuf();
   if (!pBuf)
@@ -1319,13 +1286,14 @@ VOID InternalTraceMask(
   pDestStr = AnsiStrCopyHead(pDestStr, &size, pDevExt, pHead);
   pDestStr = AnsiStrCopyMask(pDestStr, &size, pTable, mask);
 
-  TraceOutput(pBuf->buf);
+  TraceOutput(pDevExt, pBuf->buf);
   FreeTraceBuf(pBuf);
 }
 
-VOID InternalTraceModemStatus(IN PC0C_IO_PORT pIoPort)
+VOID TraceModemStatus(IN PC0C_IO_PORT pIoPort)
 {
-  HALT_UNLESS(TRACE_FILE_OK);
+  if (!TRACE_FILE_OK)
+    return;
 
   if (!pTraceData->traceEnable.modemStatus)
     return;
@@ -1337,7 +1305,7 @@ VOID InternalTraceModemStatus(IN PC0C_IO_PORT pIoPort)
       pIoPort->modemStatus);
 }
 
-VOID InternalTraceIrp(
+VOID TraceIrp(
     IN PCHAR pHead,
     IN PIRP pIrp,
     IN PNTSTATUS pStatus,
@@ -1353,7 +1321,8 @@ VOID InternalTraceIrp(
   ULONG major;
   ULONG enableMask;
 
-  HALT_UNLESS(TRACE_FILE_OK);
+  if (!TRACE_FILE_OK)
+    return;
 
   pIrpStack = IoGetCurrentIrpStackLocation(pIrp);
   major = pIrpStack->MajorFunction;
@@ -1387,7 +1356,7 @@ VOID InternalTraceIrp(
   pDevExt = pIrpStack->DeviceObject->DeviceExtension;
 
   if (!(enableMask & TRACE_ENABLE_IRP)) {
-    TraceOutput(NULL);
+    TraceOutput(pDevExt, NULL);
     return;
   }
 
@@ -1398,46 +1367,26 @@ VOID InternalTraceIrp(
   pDestStr = pBuf->buf;
 
   pDestStr = AnsiStrCopyHead(pDestStr, &size, pDevExt, pHead);
-  pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
 
   switch (major) {
     case IRP_MJ_DEVICE_CONTROL:
-      pDestStr = AnsiStrCopyCode(pDestStr, &size,
-          pIrpStack->Parameters.DeviceIoControl.IoControlCode,
-          codeNameTableIoctl, "IOCTL_", 16);
-      break;
     case IRP_MJ_PNP:
-      pDestStr = AnsiStrCopyCode(pDestStr, &size,
-          pIrpStack->MinorFunction,
-          codeNameTablePnp, "PNP_", 10);
-      break;
     case IRP_MJ_POWER:
-      pDestStr = AnsiStrCopyCode(pDestStr, &size,
-          pIrpStack->MinorFunction,
-          codeNameTablePower, "POWER_", 10);
-      break;
     case IRP_MJ_SYSTEM_CONTROL:
-      pDestStr = AnsiStrCopyCode(pDestStr, &size,
-          pIrpStack->MinorFunction,
-          codeNameTableWmi, "WMI_", 10);
       break;
     default:
+      pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
       pDestStr = AnsiStrCopyCode(pDestStr, &size,
           major, codeNameTableIrpMj, "IRP_MJ_", 10);
   }
-
-  /*
-  if (pIrpStack->FileObject)
-    pDestStr = AnsiStrFormat(pDestStr, &size, "(%lx)", PtrToUlong(pIrpStack->FileObject));
-  */
 
   pSysBuf = pIrp->AssociatedIrp.SystemBuffer;
   inform = pIrp->IoStatus.Information;
 
   switch (major) {
     case IRP_MJ_CREATE:
-    case IRP_MJ_CLOSE:
-      pDestStr = AnsiStrFormat(pDestStr, &size, ", PID:%lu", PtrToUlong(PsGetCurrentProcessId()));
+      if (flags & TRACE_FLAG_PARAMS)
+        pDestStr = AnsiStrFormat(pDestStr, &size, ", PID:%lu", PtrToUlong(PsGetCurrentProcessId()));
       break;
     case IRP_MJ_WRITE:
     case IRP_MJ_READ:
@@ -1459,9 +1408,13 @@ VOID InternalTraceIrp(
       }
       break;
     case IRP_MJ_DEVICE_CONTROL: {
+      ULONG code = pIrpStack->Parameters.DeviceIoControl.IoControlCode;
       ULONG inLength = pIrpStack->Parameters.DeviceIoControl.InputBufferLength;
 
-      switch (pIrpStack->Parameters.DeviceIoControl.IoControlCode) {
+      pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
+      pDestStr = AnsiStrCopyCode(pDestStr, &size, code, codeNameTableIoctl, "IOCTL_", 16);
+
+      switch (code) {
         case IOCTL_SERIAL_GET_MODEMSTATUS:
           if ((flags & TRACE_FLAG_RESULTS) && inform >= sizeof(ULONG)) {
             pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
@@ -1497,10 +1450,6 @@ VOID InternalTraceIrp(
               pDestStr = AnsiStrCopyDump(pDestStr, &size, ((PUCHAR)pSysBuf) + sizeof(ULONG), inform - sizeof(ULONG));
             }
           }
-          break;
-        case IOCTL_SERIAL_SET_FIFO_CONTROL:
-          if ((flags & TRACE_FLAG_PARAMS) && inLength >= sizeof(ULONG))
-            pDestStr = AnsiStrFormat(pDestStr, &size, " 0x%lX", (long)*((PULONG)pSysBuf));
           break;
         case IOCTL_SERIAL_SET_WAIT_MASK:
           if ((flags & TRACE_FLAG_PARAMS) && inLength >= sizeof(ULONG)) {
@@ -1623,31 +1572,22 @@ VOID InternalTraceIrp(
       }
       break;
     }
-    case IRP_MJ_PNP:
-      switch (pIrpStack->MinorFunction) {
+    case IRP_MJ_PNP: {
+      ULONG code = pIrpStack->MinorFunction;
+
+      pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
+      pDestStr = AnsiStrCopyCode(pDestStr, &size, code, codeNameTablePnp, "PNP_", 10);
+
+      switch (code) {
         case IRP_MN_QUERY_ID:
           pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
           pDestStr = AnsiStrCopyCode(pDestStr, &size,
               pIrpStack->Parameters.QueryId.IdType,
               codeNameTableBusQuery, "BusQuery", 10);
-          if ((flags & TRACE_FLAG_RESULTS) && inform) {
-            BOOLEAN multiStr;
-
-            pDestStr = AnsiStrCopyStr(pDestStr, &size, " Information: '");
-
-            switch (pIrpStack->Parameters.QueryId.IdType) {
-              case BusQueryHardwareIDs:
-              case BusQueryCompatibleIDs:
-                multiStr = TRUE;
-                break;
-              default:
-                multiStr = FALSE;
-            }
-            pDestStr = AnsiStrCopyStrW(pDestStr, &size,
-                (PWCHAR)inform,
-                multiStr);
-
-            pDestStr = AnsiStrCopyStr(pDestStr, &size, "'");
+          if (flags & TRACE_FLAG_RESULTS && pIrp->IoStatus.Information) {
+            pDestStr = AnsiStrFormat(pDestStr, &size,
+                " Information: \"%S\"",
+                (PWCHAR)pIrp->IoStatus.Information);
           }
           break;
         case IRP_MN_QUERY_DEVICE_TEXT:
@@ -1655,10 +1595,10 @@ VOID InternalTraceIrp(
           pDestStr = AnsiStrCopyCode(pDestStr, &size,
               pIrpStack->Parameters.QueryDeviceText.DeviceTextType,
               codeNameTableDeviceText, "DeviceText", 10);
-          if ((flags & TRACE_FLAG_RESULTS) && inform) {
+          if (flags & TRACE_FLAG_RESULTS && pIrp->IoStatus.Information) {
             pDestStr = AnsiStrFormat(pDestStr, &size,
                 " Information: \"%S\"",
-                (PWCHAR)inform);
+                (PWCHAR)pIrp->IoStatus.Information);
           }
           break;
         case IRP_MN_QUERY_DEVICE_RELATIONS:
@@ -1666,15 +1606,10 @@ VOID InternalTraceIrp(
           pDestStr = AnsiStrCopyCode(pDestStr, &size,
               pIrpStack->Parameters.QueryDeviceRelations.Type,
               codeNameTableRelations, "Relations", 10);
-          if ((flags & TRACE_FLAG_RESULTS) && inform) {
-            switch (pIrpStack->Parameters.QueryDeviceRelations.Type) {
-              case BusRelations:
-              case EjectionRelations:
-              case PowerRelations:
-              case RemovalRelations:
-              case TargetDeviceRelation:
-                pDestStr = AnsiStrFormat(pDestStr, &size, " Count=%u", (unsigned)((PDEVICE_RELATIONS)inform)->Count);
-            }
+          if (flags & TRACE_FLAG_RESULTS) {
+            if (pIrp->IoStatus.Information)
+              pDestStr = AnsiStrFormat(pDestStr, &size, " Count=%u",
+                  (unsigned)((PDEVICE_RELATIONS)pIrp->IoStatus.Information)->Count);
           }
           break;
         case IRP_MN_QUERY_INTERFACE:
@@ -1694,11 +1629,17 @@ VOID InternalTraceIrp(
           break;
       }
       break;
-    case IRP_MJ_POWER:
+    }
+    case IRP_MJ_POWER: {
+      ULONG code = pIrpStack->MinorFunction;
+
+      pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
+      pDestStr = AnsiStrCopyCode(pDestStr, &size, code, codeNameTablePower, "POWER_", 10);
+
       if ((flags & TRACE_FLAG_PARAMS) == 0)
         break;
 
-      switch (pIrpStack->MinorFunction) {
+      switch (code) {
         case IRP_MN_SET_POWER:
         case IRP_MN_QUERY_POWER: {
           POWER_STATE_TYPE powerType = pIrpStack->Parameters.Power.Type;
@@ -1736,6 +1677,14 @@ VOID InternalTraceIrp(
         }
       }
       break;
+    }
+    case IRP_MJ_SYSTEM_CONTROL: {
+      ULONG code = pIrpStack->MinorFunction;
+
+      pDestStr = AnsiStrCopyStr(pDestStr, &size, " ");
+      pDestStr = AnsiStrCopyCode(pDestStr, &size, code, codeNameTableWmi, "WMI_", 10);
+      break;
+    }
     case IRP_MJ_QUERY_INFORMATION: {
       ULONG code = pIrpStack->Parameters.QueryFile.FileInformationClass;
 
@@ -1757,11 +1706,11 @@ VOID InternalTraceIrp(
     pDestStr = AnsiStrCopyCode(pDestStr, &size, *pStatus, codeNameTableStatus, "0x", 16);
   }
 
-  TraceOutput(pBuf->buf);
+  TraceOutput(pDevExt, pBuf->buf);
   FreeTraceBuf(pBuf);
 }
 /********************************************************************/
 
-#else /* ENABLE_TRACING */
+#else /* DBG */
   #pragma warning(disable:4206) // nonstandard extension used : translation unit is empty
-#endif /* ENABLE_TRACING */
+#endif /* DBG */

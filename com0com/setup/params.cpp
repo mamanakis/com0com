@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2012 Vyacheslav Frolov
+ * Copyright (c) 2006-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,43 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.22  2011/12/29 14:34:23  vfrolov
- * Implemented RealPortName=COM<n> for PortName=COM#
- *
- * Revision 1.21  2011/12/27 11:38:13  vfrolov
- * Superseded incorrect PortParameters::ClassChanged()
- *
- * Revision 1.20  2011/12/15 15:51:48  vfrolov
- * Fixed types
- *
- * Revision 1.19  2011/12/06 16:03:22  vfrolov
- * Added cleaning high data bits for less then 8 bit data
- * Added AllDataBits option to force 8 bit data
- *
- * Revision 1.18  2010/06/01 12:54:12  vfrolov
- * Fixed bit settings
- *
- * Revision 1.17  2010/05/31 07:58:14  vfrolov
- * Added ability to invoke the system-supplied advanced settings dialog box
- *
- * Revision 1.16  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.15  2008/12/25 16:55:23  vfrolov
- * Added converting portnames to uppercase
- *
- * Revision 1.14  2008/12/02 11:54:28  vfrolov
- * Fixed typo
- *
- * Revision 1.13  2008/09/17 07:58:32  vfrolov
- * Added AddRTTO and AddRITO parameters
- *
- * Revision 1.12  2008/06/26 13:39:19  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.11  2008/05/04 09:53:51  vfrolov
- * Implemented HiddenMode option
- *
  * Revision 1.10  2008/04/08 06:49:44  vfrolov
  * Added pin OUT2
  *
@@ -98,50 +61,31 @@
 
 ///////////////////////////////////////////////////////////////
 enum {
-  m_portName       = 0x00000001,
-  m_emuBR          = 0x00000002,
-  m_emuOverrun     = 0x00000004,
-  m_plugInMode     = 0x00000008,
-  m_exclusiveMode  = 0x00000010,
-  m_hiddenMode     = 0x00000020,
-  m_allDataBits    = 0x00000040,
-  m_pinCTS         = 0x00000100,
-  m_pinDSR         = 0x00000200,
-  m_pinDCD         = 0x00000400,
-  m_pinRI          = 0x00000800,
-  m_emuNoise       = 0x00010000,
-  m_addRTTO        = 0x00020000,
-  m_addRITO        = 0x00040000,
-  m_realPortName   = 0x01000000,
+  m_portName       = 0x0001,
+  m_emuBR          = 0x0002,
+  m_emuOverrun     = 0x0004,
+  m_plugInMode     = 0x0008,
+  m_exclusiveMode  = 0x0010,
+  m_hiddenMode     = 0x0020,
+  m_pinCTS         = 0x0100,
+  m_pinDSR         = 0x0200,
+  m_pinDCD         = 0x0400,
+  m_pinRI          = 0x0800,
 };
 ///////////////////////////////////////////////////////////////
-static struct Bit
-{
-  DWORD bit;
-
-  enum {
-    OTHER,
-    FLAG,
-    PIN,
-    PROBABILITY,
-    UNSIGNED,
-  } type;
-} bits[] = {
-  {m_portName,       Bit::OTHER},
-  {m_realPortName,   Bit::OTHER},
-  {m_emuBR,          Bit::FLAG},
-  {m_emuOverrun,     Bit::FLAG},
-  {m_plugInMode,     Bit::FLAG},
-  {m_exclusiveMode,  Bit::FLAG},
-  {m_hiddenMode,     Bit::FLAG},
-  {m_allDataBits,    Bit::FLAG},
-  {m_pinCTS,         Bit::PIN},
-  {m_pinDSR,         Bit::PIN},
-  {m_pinDCD,         Bit::PIN},
-  {m_pinRI,          Bit::PIN},
-  {m_emuNoise,       Bit::PROBABILITY},
-  {m_addRTTO,        Bit::UNSIGNED},
-  {m_addRITO,        Bit::UNSIGNED},
+static DWORD flagBits[] = {
+  m_emuBR,
+  m_emuOverrun,
+  m_plugInMode,
+  m_exclusiveMode,
+  m_hiddenMode
+};
+///////////////////////////////////////////////////////////////
+static DWORD pinBits[] = {
+  m_pinCTS,
+  m_pinDSR,
+  m_pinDCD,
+  m_pinRI
 };
 ///////////////////////////////////////////////////////////////
 PortParameters::PortParameters(const char *pService, const char *pPhPortName)
@@ -154,76 +98,44 @@ PortParameters::PortParameters(const char *pService, const char *pPhPortName)
 ///////////////////////////////////////////////////////////////
 void PortParameters::Init()
 {
-  portName[0] = 0;
-  realPortName[0] = 0;
+  SNPRINTF(portName, sizeof(portName)/sizeof(portName[0]), "%s", phPortName);
   emuBR = 0;
   emuOverrun = 0;
   plugInMode = 0;
   exclusiveMode = 0;
   hiddenMode = 0;
-  allDataBits = 0;
 
   pinCTS = 0;
   pinDSR = 0;
   pinDCD = 0;
   pinRI = 0;
 
-  emuNoise = 0;
-  addRTTO = 0;
-  addRITO = 0;
-
   maskChanged = 0;
   maskExplicit = 0;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::SetPortName(const char *pNewPortName)
+BOOL PortParameters::SetPortName(const char *pNewPortName)
 {
-  if (lstrcmpi(portName, pNewPortName) != 0) {
-    if (SNPRINTF(portName, sizeof(portName)/sizeof(portName[0]), "%s", pNewPortName) <= 0) {
-      Trace("Invalid port name '%s'\n", pNewPortName);
-      return FALSE;
-    }
+  if (!lstrcmpi(pNewPortName, "*"))
+    return TRUE;
 
-    CharUpper(portName);
+  if (lstrcmpi(pNewPortName, "-")) {
+    if ((maskExplicit & m_portName) == 0) {
+      maskExplicit |= m_portName;
+      maskChanged |= m_portName;
+    }
+  } else {
+    pNewPortName = phPortName;
+    if (maskExplicit & m_portName) {
+      maskExplicit &= ~m_portName;
+      maskChanged |= m_portName;
+    }
+  }
+
+  if (lstrcmpi(portName, pNewPortName)) {
+    SNPRINTF(portName, sizeof(portName)/sizeof(portName[0]), "%s", pNewPortName);
     maskChanged |= m_portName;
   }
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::SetRealPortName(const char *pNewRealPortName)
-{
-  if (lstrcmpi(realPortName, pNewRealPortName) != 0) {
-    if (SNPRINTF(realPortName, sizeof(realPortName)/sizeof(realPortName[0]), "%s", pNewRealPortName) <= 0) {
-      Trace("Invalid real port name '%s'\n", pNewRealPortName);
-      return FALSE;
-    }
-
-    CharUpper(realPortName);
-    maskChanged |= m_realPortName;
-  }
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::InitRealPortName(const char *pRealPortName)
-{
-  if (!lstrcmpi("", pRealPortName)) {
-    maskExplicit &= ~m_realPortName;
-    maskChanged &= ~m_realPortName;
-
-    return TRUE;
-  }
-
-  if (SNPRINTF(realPortName, sizeof(realPortName)/sizeof(realPortName[0]), "%s", pRealPortName) <= 0) {
-    Trace("Invalid real port name '%s'\n", pRealPortName);
-    return FALSE;
-  }
-
-  CharUpper(realPortName);
-
-  maskChanged &= ~m_realPortName;
-  maskExplicit |= m_realPortName;
 
   return TRUE;
 }
@@ -236,14 +148,10 @@ DWORD *PortParameters::GetDwPtr(DWORD bit)
     case m_plugInMode:     return &plugInMode;
     case m_exclusiveMode:  return &exclusiveMode;
     case m_hiddenMode:     return &hiddenMode;
-    case m_allDataBits:    return &allDataBits;
     case m_pinCTS:         return &pinCTS;
     case m_pinDSR:         return &pinDSR;
     case m_pinDCD:         return &pinDCD;
     case m_pinRI:          return &pinRI;
-    case m_emuNoise:       return &emuNoise;
-    case m_addRTTO:        return &addRTTO;
-    case m_addRITO:        return &addRITO;
   }
 
   return NULL;
@@ -256,14 +164,10 @@ static const DWORD *GetDwPtrDefault(DWORD bit)
   static const DWORD plugInMode = C0C_DEFAULT_PLUGINMODE;
   static const DWORD exclusiveMode = C0C_DEFAULT_EXCLUSIVEMODE;
   static const DWORD hiddenMode = C0C_DEFAULT_HIDDENMODE;
-  static const DWORD allDataBits = C0C_DEFAULT_ALLDATABITS;
   static const DWORD pinCTS = C0C_DEFAULT_PIN_CTS;
   static const DWORD pinDSR = C0C_DEFAULT_PIN_DSR;
   static const DWORD pinDCD = C0C_DEFAULT_PIN_DCD;
   static const DWORD pinRI = C0C_DEFAULT_PIN_RI;
-  static const DWORD emuNoise = C0C_DEFAULT_EMUNOISE;
-  static const DWORD addRTTO = C0C_DEFAULT_ADDRTTO;
-  static const DWORD addRITO = C0C_DEFAULT_ADDRITO;
 
   switch (bit) {
     case m_emuBR:          return &emuBR;
@@ -271,14 +175,10 @@ static const DWORD *GetDwPtrDefault(DWORD bit)
     case m_plugInMode:     return &plugInMode;
     case m_exclusiveMode:  return &exclusiveMode;
     case m_hiddenMode:     return &hiddenMode;
-    case m_allDataBits:    return &allDataBits;
     case m_pinCTS:         return &pinCTS;
     case m_pinDSR:         return &pinDSR;
     case m_pinDCD:         return &pinDCD;
     case m_pinRI:          return &pinRI;
-    case m_emuNoise:       return &emuNoise;
-    case m_addRTTO:        return &addRTTO;
-    case m_addRITO:        return &addRITO;
   }
 
   return NULL;
@@ -288,27 +188,25 @@ static const char *GetBitName(DWORD bit)
 {
   switch (bit) {
     case m_portName:       return "PortName";
-    case m_realPortName:   return "RealPortName";
     case m_emuBR:          return "EmuBR";
     case m_emuOverrun:     return "EmuOverrun";
     case m_plugInMode:     return "PlugInMode";
     case m_exclusiveMode:  return "ExclusiveMode";
     case m_hiddenMode:     return "HiddenMode";
-    case m_allDataBits:    return "AllDataBits";
     case m_pinCTS:         return "cts";
     case m_pinDSR:         return "dsr";
     case m_pinDCD:         return "dcd";
     case m_pinRI:          return "ri";
-    case m_emuNoise:       return "EmuNoise";
-    case m_addRTTO:        return "AddRTTO";
-    case m_addRITO:        return "AddRITO";
   }
 
   return NULL;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::SetFlag(const char *pNewVal, DWORD bit)
+BOOL PortParameters::SetFlag(const char *pNewVal, DWORD bit)
 {
+  if (!lstrcmpi(pNewVal, "*"))
+    return TRUE;
+
   DWORD newFlag;
 
   if (!lstrcmpi(pNewVal, "yes")) {
@@ -316,6 +214,10 @@ bool PortParameters::SetFlag(const char *pNewVal, DWORD bit)
   }
   else
   if (!lstrcmpi(pNewVal, "no")) {
+    newFlag = 0;
+  }
+  else
+  if (!lstrcmpi(pNewVal, "-")) {
     newFlag = 0;
   }
   else {
@@ -328,6 +230,18 @@ bool PortParameters::SetFlag(const char *pNewVal, DWORD bit)
   if (pFlag == NULL)
     return FALSE;
 
+  if (lstrcmpi("-", pNewVal)) {
+    if ((maskExplicit & bit) == 0) {
+      maskExplicit |= bit;
+      maskChanged |= bit;
+    }
+  } else {
+    if (maskExplicit & bit) {
+      maskExplicit &= ~bit;
+      maskChanged |= bit;
+    }
+  }
+
   if (*pFlag != newFlag) {
     *pFlag = newFlag;
     maskChanged |= bit;
@@ -336,8 +250,11 @@ bool PortParameters::SetFlag(const char *pNewVal, DWORD bit)
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::SetPin(const char *pNewVal, DWORD bit)
+BOOL PortParameters::SetPin(const char *pNewVal, DWORD bit)
 {
+  if (!lstrcmpi(pNewVal, "*"))
+    return TRUE;
+
   DWORD newPin;
 
   if (*pNewVal == '!') {
@@ -390,6 +307,10 @@ bool PortParameters::SetPin(const char *pNewVal, DWORD bit)
   if (!lstrcmpi(pNewVal, "on")) {
     newPin |= C0C_PIN_ON;
   }
+  else
+  if (!lstrcmpi(pNewVal, "-")) {
+    newPin = 0;
+  }
   else {
     Trace("Invalid value '%s'\n", pNewVal);
     return FALSE;
@@ -400,6 +321,18 @@ bool PortParameters::SetPin(const char *pNewVal, DWORD bit)
   if (pPin == NULL)
     return FALSE;
 
+  if (lstrcmpi("-", pNewVal)) {
+    if ((maskExplicit & bit) == 0) {
+      maskExplicit |= bit;
+      maskChanged |= bit;
+    }
+  } else {
+    if (maskExplicit & bit) {
+      maskExplicit &= ~bit;
+      maskChanged |= bit;
+    }
+  }
+
   if (*pPin != newPin) {
     *pPin = newPin;
     maskChanged |= bit;
@@ -408,139 +341,7 @@ bool PortParameters::SetPin(const char *pNewVal, DWORD bit)
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::SetProbability(const char *pNewVal, DWORD bit)
-{
-  DWORD newVal = 0;
-
-  if (pNewVal[0] == '0' && pNewVal[1] == '.') {
-    const char *p = pNewVal + 2;
-
-    for (DWORD one = C0C_PROBABILITY_ONE ; one > 1 ; one /= 10) {
-      newVal *= 10;
-
-      if (*p == 0)
-        continue;
-
-      if (*p < '0' || *p > '9') {
-        Trace("Invalid value '%s'\n", pNewVal);
-        return FALSE;
-      }
-
-      newVal += *p++ - '0';
-    }
-
-    while (*p == '0')
-      p++;
-
-    if (*p != 0) {
-      Trace("Too long value '%s'\n", pNewVal);
-      return FALSE;
-    }
-  }
-  else
-  if (pNewVal[0] == '0') {
-  }
-  else {
-    Trace("Invalid value '%s'\n", pNewVal);
-    return FALSE;
-  }
-
-  DWORD *pVal = GetDwPtr(bit);
-
-  if (pVal == NULL)
-    return FALSE;
-
-  if (*pVal != newVal) {
-    *pVal = newVal;
-    maskChanged |= bit;
-  }
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::SetUnsigned(const char *pNewVal, DWORD bit)
-{
-  DWORD newVal = 0;
-
-  for (const char *p = pNewVal ; *p ; p++) {
-    if (*p < '0' || *p > '9') {
-      Trace("Invalid value '%s'\n", pNewVal);
-      return FALSE;
-    }
-    newVal = newVal*10 + (*p - '0');
-  }
-
-  DWORD *pVal = GetDwPtr(bit);
-
-  if (pVal == NULL)
-    return FALSE;
-
-  if (*pVal != newVal) {
-    *pVal = newVal;
-    maskChanged |= bit;
-  }
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::SetBit(const char *pVal, const Bit &bit)
-{
-  if (!lstrcmpi(pVal, "*"))
-    return TRUE;
-
-  if (!lstrcmpi("-", pVal)) {
-    if (maskExplicit & bit.bit) {
-      maskExplicit &= ~bit.bit;
-      maskChanged |= bit.bit;
-    }
-    return TRUE;
-  }
-
-  if (bit.type == Bit::FLAG) {
-    if (!SetFlag(pVal, bit.bit))
-      return FALSE;
-  }
-  else
-  if (bit.type == Bit::PIN) {
-    if (!SetPin(pVal, bit.bit))
-      return FALSE;
-  }
-  else
-  if (bit.type == Bit::PROBABILITY) {
-    if (!SetProbability(pVal, bit.bit))
-      return FALSE;
-  }
-  else
-  if (bit.type == Bit::UNSIGNED) {
-    if (!SetUnsigned(pVal, bit.bit))
-      return FALSE;
-  }
-  else
-  if (bit.type == Bit::OTHER) {
-    if (bit.bit == m_portName) {
-      if (!SetPortName(pVal))
-        return FALSE;
-    }
-    else
-    if (bit.bit == m_realPortName) {
-      if (!SetRealPortName(pVal))
-        return FALSE;
-    }
-    else {
-      return FALSE;
-    }
-  }
-  else {
-    return FALSE;
-  }
-
-  if (maskChanged & bit.bit)
-    maskExplicit |= bit.bit;
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::FillParametersKey(char *pRegKey, int size)
+BOOL PortParameters::FillParametersKey(char *pRegKey, int size)
 {
   int len;
 
@@ -656,12 +457,11 @@ LONG PortParameters::Load()
 
   int i;
 
-  for (i = 0 ; i < sizeof(bits)/sizeof(bits[0]) ; i++) {
-    if (!GetDwPtr(bits[i].bit))
-      continue;
+  for (i = 0 ; i < sizeof(flagBits)/sizeof(flagBits[0]) ; i++)
+    LoadDw(hKey, flagBits[i]);
 
-    LoadDw(hKey, bits[i].bit);
-  }
+  for (i = 0 ; i < sizeof(pinBits)/sizeof(pinBits[0]) ; i++)
+    LoadDw(hKey, pinBits[i]);
 
   RegCloseKey(hKey);
 
@@ -719,11 +519,13 @@ LONG PortParameters::Save()
 
   int i;
 
-  for (i = 0 ; i < sizeof(bits)/sizeof(bits[0]) ; i++) {
-    if (!GetDwPtr(bits[i].bit))
-      continue;
+  for (i = 0 ; i < sizeof(flagBits)/sizeof(flagBits[0]) ; i++) {
+    if (SaveDw(hKey, flagBits[i]) != ERROR_SUCCESS)
+      goto err;
+  }
 
-    if (SaveDw(hKey, bits[i].bit) != ERROR_SUCCESS)
+  for (i = 0 ; i < sizeof(pinBits)/sizeof(pinBits[0]) ; i++) {
+    if (SaveDw(hKey, pinBits[i]) != ERROR_SUCCESS)
       goto err;
   }
 
@@ -734,15 +536,23 @@ err:
   return err;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::ParseParametersStr(const char *pParameters)
+BOOL PortParameters::ParseParametersStr(const char *pParameters)
 {
   PortParameters tmp = *this;
 
   if (!lstrcmpi(pParameters, "-") || !lstrcmpi(pParameters, "*")) {
+    if (!tmp.SetPortName(pParameters))
+      return FALSE;
+
     int i;
 
-    for (i = 0 ; i < sizeof(bits)/sizeof(bits[0]) ; i++) {
-      if (!tmp.SetBit(pParameters, bits[i]))
+    for (i = 0 ; i < sizeof(flagBits)/sizeof(flagBits[0]) ; i++) {
+      if (!tmp.SetFlag(pParameters, flagBits[i]))
+        return FALSE;
+    }
+
+    for (i = 0 ; i < sizeof(pinBits)/sizeof(pinBits[0]) ; i++) {
+      if (!tmp.SetPin(pParameters, pinBits[i]))
         return FALSE;
     }
   } else {
@@ -767,25 +577,47 @@ bool PortParameters::ParseParametersStr(const char *pParameters)
         return FALSE;
       }
 
-      int i;
+      if (!lstrcmpi(pKey, "PortName")) {
+        if (!tmp.SetPortName(pVal))
+          return FALSE;
+      } else {
+        int i;
 
-      for (i = 0 ; i < sizeof(bits)/sizeof(bits[0]) ; i++) {
-        DWORD bit = bits[i].bit;
-        const char *pName = GetBitName(bit);
+        for (i = 0 ; i < sizeof(flagBits)/sizeof(flagBits[0]) ; i++) {
+          DWORD bit = flagBits[i];
+          DWORD *pFlag = GetDwPtr(bit);
+          const char *pName = GetBitName(bit);
 
-        if (pName == NULL)
-          continue;
+          if (pFlag == NULL || pName == NULL)
+            continue;
 
-        if (!lstrcmpi(pKey, pName)) {
-          if (!tmp.SetBit(pVal, bits[i]))
-            return FALSE;
-          break;
+          if (!lstrcmpi(pKey, pName)) {
+            if (!tmp.SetFlag(pVal, bit))
+              return FALSE;
+            break;
+          }
         }
-      }
+        if (i >= sizeof(flagBits)/sizeof(flagBits[0])) {
+          for (i = 0 ; i < sizeof(pinBits)/sizeof(pinBits[0]) ; i++) {
+            DWORD bit = pinBits[i];
+            DWORD *pPin = GetDwPtr(bit);
+            const char *pName = GetBitName(bit);
 
-      if (i >= sizeof(bits)/sizeof(bits[0])) {
-        Trace("Invalid parameter '%s'\n", pKey);
-        return FALSE;
+            if (pPin == NULL || pName == NULL)
+              continue;
+
+            if (!lstrcmpi(pKey, pName)) {
+              if (!tmp.SetPin(pVal, bit))
+                return FALSE;
+              break;
+            }
+          }
+
+          if (i >= sizeof(pinBits)/sizeof(pinBits[0])) {
+            Trace("Invalid parameter '%s'\n", pKey);
+            return FALSE;
+          }
+        }
       }
     }
   }
@@ -795,7 +627,7 @@ bool PortParameters::ParseParametersStr(const char *pParameters)
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::FillParametersStr(char *pParameters, int size, bool detail)
+BOOL PortParameters::FillParametersStr(char *pParameters, int size, BOOL detail)
 {
   int len;
 
@@ -808,107 +640,74 @@ bool PortParameters::FillParametersStr(char *pParameters, int size, bool detail)
   pParameters += len;
   size -= len;
 
-  if (maskExplicit & m_realPortName) {
-    len = SNPRINTF(pParameters, size, ",RealPortName=%s", realPortName);
+  int i;
 
-    if (len < 0)
-      return FALSE;
-
-    pParameters += len;
-    size -= len;
-  }
-
-  for (int i = 0 ; i < sizeof(bits)/sizeof(bits[0]) ; i++) {
-    DWORD bit = bits[i].bit;
-
-    if (!GetDwPtr(bit))
-      continue;
-
+  for (i = 0 ; i < sizeof(flagBits)/sizeof(flagBits[0]) ; i++) {
+    DWORD bit = flagBits[i];
     const char *pName = GetBitName(bit);
 
     if (pName) {
-      const DWORD *pBit;
+      const DWORD *pFlag;
 
       if ((maskExplicit & bit) != 0)
-        pBit = GetDwPtr(bit);
+        pFlag = GetDwPtr(bit);
       else
       if (detail)
-        pBit = GetDwPtrDefault(bit);
+        pFlag = GetDwPtrDefault(bit);
       else
         continue;
 
-      if (pBit == NULL)
+      if (pFlag == NULL)
         continue;
 
-      if (bits[i].type == Bit::FLAG) {
-        len = SNPRINTF(pParameters, size, ",%s=%s", pName, *pBit ? "yes" : "no");
-      }
+      len = SNPRINTF(pParameters, size, ",%s=%s", pName, *pFlag ? "yes" : "no");
+
+      if (len < 0)
+        return FALSE;
+
+      pParameters += len;
+      size -= len;
+    }
+  }
+
+  for (i = 0 ; i < sizeof(pinBits)/sizeof(pinBits[0]) ; i++) {
+    DWORD bit = pinBits[i];
+    const char *pName = GetBitName(bit);
+
+    if (pName) {
+      const DWORD *pPin;
+
+      if ((maskExplicit & bit) != 0)
+        pPin = GetDwPtr(bit);
       else
-      if (bits[i].type == Bit::PIN) {
-        const char *pVal = NULL;
-
-        switch (*pBit & ~C0C_PIN_NEGATIVE) {
-          case C0C_PIN_RRTS:  pVal = "rrts";  break;
-          case C0C_PIN_RDTR:  pVal = "rdtr";  break;
-          case C0C_PIN_ROUT1: pVal = "rout1"; break;
-          case C0C_PIN_ROUT2: pVal = "rout2"; break;
-          case C0C_PIN_ROPEN: pVal = "ropen"; break;
-          case C0C_PIN_LRTS:  pVal = "lrts";  break;
-          case C0C_PIN_LDTR:  pVal = "ldtr";  break;
-          case C0C_PIN_LOUT1: pVal = "lout1"; break;
-          case C0C_PIN_LOUT2: pVal = "lout2"; break;
-          case C0C_PIN_LOPEN: pVal = "lopen"; break;
-          case C0C_PIN_ON:    pVal = "on";    break;
-        }
-
-        if (pVal == NULL)
-          continue;
-
-        len = SNPRINTF(pParameters, size, ",%s=%s%s", pName, (*pBit & C0C_PIN_NEGATIVE) == 0 ? "" : "!", pVal);
-      }
+      if (detail)
+        pPin = GetDwPtrDefault(bit);
       else
-      if (bits[i].type == Bit::PROBABILITY) {
-          if (*pBit == 0) {
-            len = SNPRINTF(pParameters, size, ",%s=0", pName);
-          } else {
-            char strVal[11] = "";
-            char digits[11];
+        continue;
 
-            SNPRINTF(digits, sizeof(digits)/sizeof(digits[0]), "%ld", (unsigned long)*pBit);
+      if (pPin == NULL)
+        continue;
 
-            for (int i = lstrlen(digits) ; i ; i--) {
-              if (digits[i - 1] > '0')
-                break;
+      const char *pVal = NULL;
 
-              digits[i - 1] = 0;
-            }
-
-            const char *p = digits;
-
-            for (DWORD one = C0C_PROBABILITY_ONE/10 ; one > 0 ; one /= 10) {
-              if (one > *pBit) {
-                lstrcat(strVal, "0");
-              }
-              else
-              if (*p) {
-                char sc[2];
-
-                sc[0] = *p++;
-                sc[1] = 0;
-                lstrcat(strVal, sc);
-              }
-              else {
-                break;
-              }
-            }
-
-            len = SNPRINTF(pParameters, size, ",%s=0.%s", pName, strVal);
-          }
+      switch (*pPin & ~C0C_PIN_NEGATIVE) {
+        case C0C_PIN_RRTS:  pVal = "rrts";  break;
+        case C0C_PIN_RDTR:  pVal = "rdtr";  break;
+        case C0C_PIN_ROUT1: pVal = "rout1"; break;
+        case C0C_PIN_ROUT2: pVal = "rout2"; break;
+        case C0C_PIN_ROPEN: pVal = "ropen"; break;
+        case C0C_PIN_LRTS:  pVal = "lrts";  break;
+        case C0C_PIN_LDTR:  pVal = "ldtr";  break;
+        case C0C_PIN_LOUT1: pVal = "lout1"; break;
+        case C0C_PIN_LOUT2: pVal = "lout2"; break;
+        case C0C_PIN_LOPEN: pVal = "lopen"; break;
+        case C0C_PIN_ON:    pVal = "on";    break;
       }
-      else
-      if (bits[i].type == Bit::UNSIGNED) {
-        len = SNPRINTF(pParameters, size, ",%s=%lu", pName, (unsigned long)*pBit);
-      }
+
+      if (pVal == NULL)
+        continue;
+
+      len = SNPRINTF(pParameters, size, ",%s=%s%s", pName, (*pPin & C0C_PIN_NEGATIVE) == 0 ? "" : "!", pVal);
 
       if (len < 0)
         return FALSE;
@@ -921,22 +720,12 @@ bool PortParameters::FillParametersStr(char *pParameters, int size, bool detail)
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-bool PortParameters::FillPortName(char *pPortName, int size)
+BOOL PortParameters::FillPortName(char *pPortName, int size)
 {
   int len;
 
   len = SNPRINTF(pPortName, size, "%s",
                  (maskExplicit & m_portName) ? portName : phPortName);
-
-  return len >= 0;
-}
-///////////////////////////////////////////////////////////////
-bool PortParameters::FillRealPortName(char *pRealPortName, int size)
-{
-  int len;
-
-  len = SNPRINTF(pRealPortName, size, "%s",
-                 (maskExplicit & m_realPortName) ? realPortName : "");
 
   return len >= 0;
 }
@@ -950,19 +739,11 @@ const char *PortParameters::GetHelp()
     "  <par>=<val>[,...]       - set value <val> for each parameter <par>\n"
     "\n"
     "Parameters:\n"
-    "  PortName=<portname>     - set port name to <portname>\n"
+    "  PortName=<name>         - set port name to <name>\n"
     "                            (port identifier by default)\n"
     "  EmuBR={yes|no}          - enable/disable baud rate emulation in the direction\n"
     "                            to the paired port (disabled by default)\n"
     "  EmuOverrun={yes|no}     - enable/disable buffer overrun (disabled by default)\n"
-    "  EmuNoise=<n>            - probability in range 0-0.99999999 of error per\n"
-    "                            character frame in the direction to the paired port\n"
-    "                            (0 by default)\n"
-    "  AddRTTO=<n>             - add <n> milliseconds to the total time-out period\n"
-    "                            for read operations (0 by default)\n"
-    "  AddRITO=<n>             - add <n> milliseconds to the maximum time allowed to\n"
-    "                            elapse between the arrival of two characters for\n"
-    "                            read operations (0 by default)\n"
     "  PlugInMode={yes|no}     - enable/disable plug-in mode, the plug-in mode port\n"
     "                            is hidden and can't be open if the paired port is\n"
     "                            not open (disabled by default)\n"
@@ -971,8 +752,6 @@ const char *PortParameters::GetHelp()
     "  HiddenMode={yes|no}     - enable/disable hidden mode, the hidden mode port is\n"
     "                            hidden as it is possible for port enumerators\n"
     "                            (disabled by default)\n"
-    "  AllDataBits={yes|no}    - enable/disable all data bits transfer disregard\n"
-    "                            data bits setting (disabled by default)\n"
     "  cts=[!]<p>              - wire CTS pin to <p> (rrts by default)\n"
     "  dsr=[!]<p>              - wire DSR pin to <p> (rdtr by default)\n"
     "  dcd=[!]<p>              - wire DCD pin to <p> (rdtr by default)\n"

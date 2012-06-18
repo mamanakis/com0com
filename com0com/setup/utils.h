@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2011 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,18 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.8  2010/07/30 09:15:04  vfrolov
- * Added STRDUP()
- *
- * Revision 1.7  2008/12/25 16:56:25  vfrolov
- * Added MatchPattern()
- *
- * Revision 1.6  2008/12/24 15:22:44  vfrolov
- * Added BusyMask::Clear() and BusyMask::DelNum()
- *
- * Revision 1.5  2007/09/25 12:28:22  vfrolov
- * Implemented Stack class
- *
  * Revision 1.4  2007/01/11 15:03:43  vfrolov
  * Added STRTOK_R()
  *
@@ -49,23 +37,18 @@
 #ifndef _C0C_UTILS_H_
 #define _C0C_UTILS_H_
 
-///////////////////////////////////////////////////////////////
 int VSNPRINTF(char *pBuf, int size, const char *pFmt, va_list va);
 int SNPRINTF(char *pBuf, int size, const char *pFmt, ...);
 char *STRTOK_R(char *pStr, const char *pDelims, char **ppSave);
-bool StrToInt(const char *pStr, int *pNum);
-bool MatchPattern(const char *pPattern, const char *pStr);
-char *STRDUP(const char *pSrcStr, bool showErrors = TRUE);
-///////////////////////////////////////////////////////////////
+BOOL StrToInt(const char *pStr, int *pNum);
+
 class BusyMask {
 public:
   BusyMask() : pBusyMask(NULL), busyMaskLen(0) {}
-  ~BusyMask() { Clear(); }
+  ~BusyMask();
 
-  void Clear();
-  bool AddNum(int num);
-  void DelNum(int num);
-  bool IsFreeNum(int num) const;
+  BOOL AddNum(int num);
+  BOOL IsFreeNum(int num) const;
   int GetFirstFreeNum() const;
 private:
   PBYTE pBusyMask;
@@ -85,7 +68,7 @@ private:
 class Stack {
 public:
   Stack() : pFirst(NULL) {}
-  bool Push(StackEl *pElem)
+  BOOL Push(StackEl *pElem)
   {
     if (!pElem)
       return FALSE;
@@ -105,6 +88,5 @@ public:
 private:
   StackEl *pFirst;
 };
-///////////////////////////////////////////////////////////////
 
 #endif /* _C0C_UTILS_H_ */

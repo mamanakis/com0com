@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2009 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.13  2008/12/02 16:10:09  vfrolov
- * Separated tracing and debuging
- *
- * Revision 1.12  2008/05/04 09:51:45  vfrolov
- * Implemented HiddenMode option
- *
  * Revision 1.11  2007/02/21 16:52:34  vfrolov
  * Added tracing of IRP_MJ_POWER with more details
  *
@@ -64,7 +58,15 @@
 #ifndef _TRACE_H_
 #define _TRACE_H_
 
-#if ENABLE_TRACING
+#if DBG
+
+#define HALT_UNLESS3(exp, p1, p2, p3) \
+  if (!(exp)) \
+    KeBugCheckEx(0xDEADC0CD, (FILE_ID << 16) + __LINE__, p1, p2, p3)
+
+#define HALT_UNLESS2(exp, p1, p2) HALT_UNLESS3(exp, p1, p2, 0)
+#define HALT_UNLESS1(exp, p1)     HALT_UNLESS3(exp, p1, 0, 0)
+#define HALT_UNLESS(exp)          HALT_UNLESS3(exp, 0, 0, 0)
 
 #define TRACE_FLAG_PARAMS         0x0001
 #define TRACE_FLAG_RESULTS        0x0002
@@ -80,51 +82,41 @@ typedef struct _FIELD2NAME {
   PCHAR name;
 } FIELD2NAME, *PFIELD2NAME;
 
-extern struct _TRACE_DATA *pTraceData;
-#define TRACE_FILE_OK (pTraceData != NULL)
-
 VOID TraceOpen(
     IN PDRIVER_OBJECT _pDrvObj,
     IN PUNICODE_STRING pRegistryPath);
 
 VOID TraceClose();
 
-VOID InternalTrace0(
+VOID Trace0(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PWCHAR pStr);
 
-VOID InternalTrace00(
+VOID Trace00(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PWCHAR pStr1,
     IN PWCHAR pStr2);
 
-VOID InternalTraceCode(
+VOID TraceCode(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PCHAR pHead,
     IN PCODE2NAME pTable,
     IN ULONG code,
     IN PNTSTATUS pStatus);
 
-VOID InternalTraceMask(
+VOID TraceMask(
     IN PC0C_COMMON_EXTENSION pDevExt,
     IN PCHAR pHead,
     IN PCODE2NAME pTable,
     IN ULONG mask);
 
-VOID InternalTraceModemStatus(IN PC0C_IO_PORT pIoPort);
+VOID TraceModemStatus(IN PC0C_IO_PORT pIoPort);
 
-VOID InternalTraceIrp(
+VOID TraceIrp(
     IN PCHAR pHead,
     IN PIRP pIrp,
     IN PNTSTATUS pStatus,
     IN ULONG flags);
-
-#define Trace0(a1, a2)                 if (TRACE_FILE_OK) InternalTrace0(a1, a2); else
-#define Trace00(a1, a2, a3)            if (TRACE_FILE_OK) InternalTrace00(a1, a2, a3); else
-#define TraceCode(a1, a2, a3, a4, a5)  if (TRACE_FILE_OK) InternalTraceCode(a1, a2, a3, a4, a5); else
-#define TraceMask(a1, a2, a3, a4)      if (TRACE_FILE_OK) InternalTraceMask(a1, a2, a3, a4); else
-#define TraceModemStatus(a1)           if (TRACE_FILE_OK) InternalTraceModemStatus(a1); else
-#define TraceIrp(a1, a2, a3, a4)       if (TRACE_FILE_OK) InternalTraceIrp(a1, a2, a3, a4); else
 
 CODE2NAME codeNameTableWaitMask[];
 CODE2NAME codeNameTablePurgeMask[];
@@ -152,8 +144,12 @@ CODE2NAME codeNameTableShowPort[];
 FIELD2NAME codeNameTableControlHandShake[];
 FIELD2NAME codeNameTableFlowReplace[];
 
-#else /* ENABLE_TRACING */
+#else /* DBG */
 
+#define HALT_UNLESS3(exp, p1, p2, p3)
+#define HALT_UNLESS2(exp, p1, p2)
+#define HALT_UNLESS1(exp, p1)
+#define HALT_UNLESS(exp)
 #define TraceOpen(a1, a2)
 #define TraceClose()
 #define Trace0(a1, a2)
@@ -163,6 +159,6 @@ FIELD2NAME codeNameTableFlowReplace[];
 #define TraceModemStatus(a1)
 #define TraceIrp(a1, a2, a3, a4)
 
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
 #endif /* _TRACE_H_ */

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2011 Vyacheslav Frolov
+ * Copyright (c) 2006-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,26 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.11  2011/07/15 16:09:05  vfrolov
- * Disabled MessageBox() for silent mode and added default processing
- *
- * Revision 1.10  2010/07/30 09:27:18  vfrolov
- * Added STRDUP()
- * Fixed updating the source location information by OemPath() and InstallOEMInf()
- * Optimazed UninstallAllInfFiles() to look omly OEM files
- *
- * Revision 1.9  2010/07/16 07:47:13  vfrolov
- * Added using SetupUninstallOEMInf() if it exists in setupapi.dll
- *
- * Revision 1.8  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.7  2009/02/16 10:36:16  vfrolov
- * Done --silent option more silent
- *
- * Revision 1.6  2008/04/02 10:30:26  vfrolov
- * Added check pointer for null
- *
  * Revision 1.5  2007/09/20 12:39:59  vfrolov
  * Added SetLastError(ERROR_NOT_ENOUGH_MEMORY)
  *
@@ -62,7 +42,7 @@
 #include "utils.h"
 
 ///////////////////////////////////////////////////////////////
-static bool GetVersionInfo(const char *pInfPath, const char *pKey, char **ppValue, bool showErrors)
+static BOOL GetVersionInfo(const char *pInfPath, const char *pKey, char **ppValue, BOOL showErrors)
 {
   if (!pInfPath)
     return FALSE;
@@ -70,101 +50,42 @@ static bool GetVersionInfo(const char *pInfPath, const char *pKey, char **ppValu
   if (*ppValue)
     return TRUE;
 
-  DWORD size;
-  PSP_INF_INFORMATION pInformation;
+  char buf[4000];
 
-  if (!SetupGetInfInformation(pInfPath, INFINFO_INF_NAME_IS_ABSOLUTE, NULL, 0, &size)) {
+  if (!SetupGetInfInformation(pInfPath, INFINFO_INF_NAME_IS_ABSOLUTE, (PSP_INF_INFORMATION)buf, sizeof(buf), NULL)) {
     if (showErrors)
-      ShowLastError(MB_OK|MB_ICONSTOP, "SetupGetInfInformation() for %s", pInfPath);
+      ShowLastError(MB_OK|MB_ICONSTOP, "SetupGetInfInformation(%s)", pInfPath);
     return FALSE;
   }
 
-  pInformation = (PSP_INF_INFORMATION)LocalAlloc(LPTR, size);
+  DWORD size;
 
-  if (pInformation) {
-    if (!SetupGetInfInformation(pInfPath, INFINFO_INF_NAME_IS_ABSOLUTE, pInformation, size, NULL)) {
-      if (showErrors)
-        ShowLastError(MB_OK|MB_ICONSTOP, "SetupGetInfInformation() for %s", pInfPath);
-      LocalFree(pInformation);
-      return FALSE;
-    }
-  } else {
-    SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-    ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)size);
-    return FALSE;
-  }
-
-  if (!SetupQueryInfVersionInformation(pInformation, 0, pKey, NULL, 0, &size)) {
+  if (!SetupQueryInfVersionInformation((PSP_INF_INFORMATION)buf, 0, pKey, NULL, 0, &size)) {
     if (showErrors)
       ShowLastError(MB_OK|MB_ICONSTOP, "SetupQueryInfVersionInformation(%s) for %s", pKey, pInfPath);
-    LocalFree(pInformation);
     return FALSE;
   }
 
   *ppValue = (char *)LocalAlloc(LPTR, size*sizeof(*ppValue[0]));
 
   if (*ppValue) {
-    if (!SetupQueryInfVersionInformation(pInformation, 0, pKey, *ppValue, size, NULL)) {
+    if (!SetupQueryInfVersionInformation((PSP_INF_INFORMATION)buf, 0, pKey, *ppValue, size, NULL)) {
       if (showErrors)
         ShowLastError(MB_OK|MB_ICONSTOP, "SetupQueryInfVersionInformation(%s) for %s", pKey, pInfPath);
       LocalFree(*ppValue);
       *ppValue = NULL;
-      LocalFree(pInformation);
       return FALSE;
     }
   } else {
     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)(size*sizeof(*ppValue[0])));
-    LocalFree(pInformation);
     return FALSE;
   }
 
-  LocalFree(pInformation);
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-static bool Open(const char *pInfPath, HINF *phInf, bool showErrors)
-{
-  if (*phInf != INVALID_HANDLE_VALUE)
-    return TRUE;
-
-  int res;
-
-  do {
-    res = IDCONTINUE;
-
-    UINT errLine;
-    *phInf = SetupOpenInfFile(pInfPath, NULL, INF_STYLE_WIN4, &errLine);
-
-    if (*phInf == INVALID_HANDLE_VALUE) {
-      if (!showErrors)
-        break;
-
-      res = ShowLastError(MB_RETRYCANCEL,
-                          "SetupOpenInfFile(%s) on line %u",
-                          pInfPath, errLine);
-    }
-  } while (res == IDRETRY);
-
-  return *phInf != INVALID_HANDLE_VALUE;
-}
-///////////////////////////////////////////////////////////////
-static bool IsPathInList(
-    const char *pPath,
-    const char *const *ppList)
-{
-  if (pPath == NULL || ppList == NULL)
-    return FALSE;
-
-  while (*ppList) {
-    if (lstrcmpi(*ppList++, pPath) == 0)
-      return TRUE;
-  }
-
-  return FALSE;
-}
-///////////////////////////////////////////////////////////////
-static bool GetFilePath(
+static BOOL GetFilePath(
     const char *pFileName,
     const char *pNearPath,
     char *pFilePath,
@@ -215,135 +136,69 @@ static bool GetFilePath(
 }
 
 InfFile::InfFile(const char *pInfName, const char *pNearPath)
-  : pPath(NULL)
-  , pOemPath(NULL)
-  , pClassGUID(NULL)
-  , pClass(NULL)
-  , pProvider(NULL)
-  , pDriverVer(NULL)
-  , pUninstallInfTag(NULL)
-  , hInf(INVALID_HANDLE_VALUE)
+  : pPath(NULL),
+    pClassGUID(NULL),
+    pClass(NULL),
+    pProvider(NULL)
 {
-  char path[MAX_PATH + 1];
+  char path[MAX_PATH];
 
-  if (GetFilePath(pInfName, pNearPath, path, sizeof(path)/sizeof(path[0])))
-    pPath = STRDUP(path);
+  if (GetFilePath(pInfName, pNearPath, path, sizeof(path)/sizeof(path[0]))) {
+    int len = lstrlen(path);
+
+    pPath = (char *)LocalAlloc(LPTR, (len + 1)*sizeof(path[0]));
+
+    if (pPath) {
+      lstrcpy(pPath, path);
+    } else {
+      SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+      ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)(sizeof(path)/sizeof(path[0])));
+    }
+  }
 }
 ///////////////////////////////////////////////////////////////
 InfFile::~InfFile()
 {
   if (pPath)
     LocalFree((HLOCAL)pPath);
-  if (pOemPath)
-    LocalFree((HLOCAL)pOemPath);
   if (pClassGUID)
     LocalFree((HLOCAL)pClassGUID);
   if (pClass)
     LocalFree((HLOCAL)pClass);
   if (pProvider)
     LocalFree((HLOCAL)pProvider);
-  if (pUninstallInfTag)
-    LocalFree((HLOCAL)pUninstallInfTag);
-  if (pDriverVer)
-    LocalFree((HLOCAL)pDriverVer);
-  if (hInf != INVALID_HANDLE_VALUE)
-    SetupCloseInfFile(hInf);
 }
 ///////////////////////////////////////////////////////////////
-bool InfFile::Test(const InfFileField *pFields, bool showErrors) const
+const char *InfFile::ClassGUID(BOOL showErrors) const
 {
-  if (!Open(pPath, &hInf, showErrors))
-    return FALSE;
-
-  for (const InfFileField *pField = pFields ; pField->pSection != NULL ; pField++) {
-    INFCONTEXT context;
-
-    if (!SetupFindFirstLine(hInf, pField->pSection, pField->pKey, &context))
-      return FALSE;
-
-    for (;;) {
-      DWORD size;
-
-      if (!SetupGetStringField(&context, pField->nField, NULL, 0, &size))
-        return FALSE;
-
-      char *pValue = (char *)LocalAlloc(LPTR, size*sizeof(pValue[0]));
-
-      if (pValue == NULL) {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)(size*sizeof(pValue[0])));
-        return FALSE;
-      }
-
-      if (!SetupGetStringField(&context, pField->nField, pValue, size, NULL)) {
-        LocalFree(pValue);
-        return FALSE;
-      }
-
-      if (lstrcmpi(pValue, pField->pFieldValue) == 0) {
-        LocalFree(pValue);
-        break;
-      }
-
-      LocalFree(pValue);
-
-      if (!SetupFindNextMatchLine(&context, pField->pKey, &context))
-        return FALSE;
-    }
-  }
-
-  return TRUE;
-}
-///////////////////////////////////////////////////////////////
-const char *InfFile::OemPath(bool showErrors) const
-{
-  if (!pOemPath) {
-    char path[MAX_PATH + 1];
-
-    if (SetupCopyOEMInf(pPath, NULL, SPOST_NONE, SP_COPY_REPLACEONLY|SP_COPY_NOOVERWRITE,
-          path, sizeof(path)/sizeof(path[0]), NULL, NULL) ||
-        GetLastError() == ERROR_FILE_EXISTS)
-    {
-      pOemPath = STRDUP(path, showErrors);
-    }
-  }
-
-  return pOemPath;
-}
-///////////////////////////////////////////////////////////////
-const char *InfFile::ClassGUID(bool showErrors) const
-{
-  GetVersionInfo(pPath, "ClassGUID", &pClassGUID, showErrors);
+  GetVersionInfo(pPath, "ClassGUID", &(char *)pClassGUID, showErrors);
 
   return pClassGUID;
 }
 ///////////////////////////////////////////////////////////////
-const char *InfFile::Class(bool showErrors) const
+const char *InfFile::Class(BOOL showErrors) const
 {
-  GetVersionInfo(pPath, "Class", &pClass, showErrors);
+  GetVersionInfo(pPath, "Class", &(char *)pClass, showErrors);
 
   return pClass;
 }
 ///////////////////////////////////////////////////////////////
-const char *InfFile::Provider(bool showErrors) const
+const char *InfFile::Provider(BOOL showErrors) const
 {
-  GetVersionInfo(pPath, "Provider", &pProvider, showErrors);
+  GetVersionInfo(pPath, "Provider", &(char *)pProvider, showErrors);
 
   return pProvider;
 }
 ///////////////////////////////////////////////////////////////
-const char *InfFile::DriverVer(bool showErrors) const
+BOOL InfFile::Compare(
+    const char *_pClassGUID,
+    const char *_pClass,
+    const char *_pProvider,
+    BOOL showErrors) const
 {
-  GetVersionInfo(pPath, "DriverVer", &pDriverVer, showErrors);
-
-  return pDriverVer;
-}
-///////////////////////////////////////////////////////////////
-const char *InfFile::UninstallInfTag(bool showErrors) const
-{
-  GetVersionInfo(pPath, "UninstallInfTag", &pUninstallInfTag, showErrors);
-
-  return pUninstallInfTag;
+  return (!_pClassGUID || (ClassGUID(showErrors) && !lstrcmpi(pClassGUID, _pClassGUID))) &&
+         (!_pClass || (Class(showErrors) && !lstrcmpi(pClass, _pClass))) &&
+         (!_pProvider || (Provider(showErrors) && !lstrcmpi(pProvider, _pProvider)));
 }
 ///////////////////////////////////////////////////////////////
 static UINT FileCallback(
@@ -370,15 +225,26 @@ static UINT FileCallback(
   return SetupDefaultQueueCallback(Context, Notification, Param1, Param2);
 }
 
-bool InfFile::UninstallFiles(const char *pFilesSection) const
+BOOL InfFile::UninstallFiles(const char *pFilesSection) const
 {
   if (!pPath)
     return FALSE;
 
-  if (!Open(pPath, &hInf, TRUE))
-    return FALSE;
-
   int res;
+  HINF hInf;
+
+  do {
+    res = IDCONTINUE;
+
+    UINT errLine;
+    hInf = SetupOpenInfFile(pPath, NULL, INF_STYLE_WIN4, &errLine);
+
+    if (hInf == INVALID_HANDLE_VALUE)
+      res = ShowLastError(MB_CANCELTRYCONTINUE, "SetupOpenInfFile(%s) on line %u", pPath, errLine);
+  } while (res == IDTRYAGAIN);
+
+  if (res != IDCONTINUE)
+    return FALSE;
 
   do {
     res = IDCONTINUE;
@@ -407,33 +273,37 @@ bool InfFile::UninstallFiles(const char *pFilesSection) const
     }
   } while (res == IDTRYAGAIN);
 
+  SetupCloseInfFile(hInf);
+
   if (res != IDCONTINUE)
     return FALSE;
 
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-bool InfFile::InstallOEMInf() const
+BOOL InfFile::InstallOEMInf() const
 {
   if (!pPath)
     return FALSE;
 
-  bool wasInstalled = (OemPath() != NULL);
+  if (!SetupCopyOEMInf(pPath, NULL, SPOST_PATH, SP_COPY_REPLACEONLY, NULL, 0, NULL, NULL)) {
+    char infPathDest[MAX_PATH];
 
-  if (!SetupCopyOEMInf(pPath, NULL, SPOST_PATH, 0, NULL, 0, NULL, NULL)) {
-    ShowLastError(MB_OK|MB_ICONSTOP, "SetupCopyOEMInf(%s)", pPath);
-    return FALSE;
+    if (!SetupCopyOEMInf(pPath, NULL, SPOST_PATH, 0, infPathDest,
+        sizeof(infPathDest)/sizeof(infPathDest[0]), NULL, NULL))
+    {
+      ShowLastError(MB_OK|MB_ICONSTOP, "SetupCopyOEMInf(%s)", pPath);
+      return FALSE;
+    }
+
+    Trace("Installed %s to %s\n", pPath, infPathDest);
   }
-
-  if (!wasInstalled)
-    Trace("Installed %s to %s\n", pPath, OemPath());
-  else
-    Trace("Re-installed %s to %s\n", pPath, OemPath());
 
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-static bool UninstallFile(const char *pPath)
+#ifndef HAVE_SetupUninstallOEMInf
+static BOOL UninstallFile(const char *pPath)
 {
   int res;
 
@@ -441,7 +311,7 @@ static bool UninstallFile(const char *pPath)
     res = IDCONTINUE;
 
     if (DeleteFile(pPath)) {
-      Trace("Deleted %s\n", pPath);
+      Trace("Deleted File %s\n", pPath);
     }
     else
     if (GetLastError() == ERROR_FILE_NOT_FOUND) {
@@ -457,46 +327,31 @@ static bool UninstallFile(const char *pPath)
 
   return TRUE;
 }
+#endif /* HAVE_SetupUninstallOEMInf */
 
-static bool UninstallInf(const char *pPath)
+static BOOL UninstallInf(const char *pPath)
 {
-  if (pPath == NULL)
-    return FALSE;
-
   int res;
 
   do {
     res = IDCONTINUE;
 
-    char infPathDest[MAX_PATH + 1];
+    char infPathDest[MAX_PATH];
 
     if (SNPRINTF(infPathDest, sizeof(infPathDest)/sizeof(infPathDest[0]), "%s", pPath) > 0) {
-      typedef BOOL (WINAPI *PSETUPUNINSTALLOEMINFA)(IN PCSTR, IN DWORD, IN PVOID);
-      static PSETUPUNINSTALLOEMINFA pSetupUninstallOEMInf = NULL;
+#ifdef HAVE_SetupUninstallOEMInf
+      char *pInfNameDest, *p;
 
-      if(!pSetupUninstallOEMInf) {
-        HMODULE hModule = GetModuleHandle("setupapi.dll");
+      for (pInfNameDest = p = infPathDest ; *p ; p++)
+        if (*p == '\\')
+          pInfNameDest = p + 1;
 
-        if (hModule) {
-          pSetupUninstallOEMInf =
-              (PSETUPUNINSTALLOEMINFA)GetProcAddress(hModule, "SetupUninstallOEMInfA");
-        }
+      if (SetupUninstallOEMInf(pInfNameDest, 0, NULL)) {
+        Trace("Deleted %s\n", pInfNameDest);
+      } else {
+        res = ShowLastError(MB_CANCELTRYCONTINUE, "SetupUninstallOEMInf(%s)", pInfNameDest);
       }
-
-      if (pSetupUninstallOEMInf) {
-        char *pInfNameDest, *p;
-
-        for (pInfNameDest = p = infPathDest ; *p ; p++)
-          if (*p == '\\')
-            pInfNameDest = p + 1;
-
-        if (pSetupUninstallOEMInf(pInfNameDest, 0, NULL)) {
-          Trace("Uninstalled %s\n", pInfNameDest);
-        } else {
-          res = ShowLastError(MB_CANCELTRYCONTINUE, "SetupUninstallOEMInf(%s)", pInfNameDest);
-        }
-      }
-      else
+#else /* HAVE_SetupUninstallOEMInf */
       if (UninstallFile(infPathDest)) {
         int infPathDestLen = lstrlen(infPathDest);
 
@@ -513,6 +368,7 @@ static bool UninstallInf(const char *pPath)
       } else {
         res = IDCANCEL;
       }
+#endif /* HAVE_SetupUninstallOEMInf */
     } else {
       Trace("Can't uninstall %s\n", pPath);
       res = IDCANCEL;
@@ -522,10 +378,10 @@ static bool UninstallInf(const char *pPath)
   if (res != IDCONTINUE)
     return FALSE;
 
-  return TRUE;
+  return res;
 }
 ///////////////////////////////////////////////////////////////
-bool InfFile::UninstallOEMInf() const
+BOOL InfFile::UninstallOEMInf() const
 {
   if (!pPath)
     return FALSE;
@@ -535,8 +391,12 @@ bool InfFile::UninstallOEMInf() const
   do {
     res = IDCONTINUE;
 
-    if (OemPath()) {
-      UninstallInf(OemPath());
+    char infPathDest[MAX_PATH];
+
+    if (SetupCopyOEMInf(pPath, NULL, SPOST_NONE, SP_COPY_REPLACEONLY, infPathDest,
+        sizeof(infPathDest)/sizeof(infPathDest[0]), NULL, NULL))
+    {
+      UninstallInf(infPathDest);
     } else {
       if (GetLastError() == ERROR_FILE_NOT_FOUND) {
         Trace("File %s not installed\n", pPath);
@@ -552,29 +412,10 @@ bool InfFile::UninstallOEMInf() const
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-static bool TestUninstall(
-    const InfFile &infFile,
-    const InfFile::InfFileUninstall *pInfFileUninstallList,
-    bool queryConfirmation)
-{
-  for (
-      const InfFile::InfFileUninstall *pInfFileUninstall = pInfFileUninstallList ;
-      pInfFileUninstall->pRequiredFields != NULL ;
-      pInfFileUninstall++)
-  {
-    if (pInfFileUninstall->queryConfirmation != queryConfirmation)
-      continue;
-
-    if (infFile.Test(pInfFileUninstall->pRequiredFields, FALSE))
-      return TRUE;
-  }
-
-  return FALSE;
-}
-
-bool InfFile::UninstallAllInfFiles(
-    const InfFileUninstall *pInfFileUninstallList,
-    const char *const *ppOemPathExcludeList)
+BOOL InfFile::UninstallAllInfFiles(
+    const char *_pClassGUID,
+    const char *_pClass,
+    const char *_pProvider)
 {
   Trace("Scan INF files .");
 
@@ -583,7 +424,8 @@ bool InfFile::UninstallAllInfFiles(
   if (!SetupGetInfFileList(NULL, INF_STYLE_WIN4, NULL, 0, &size)) {
     DWORD err = GetLastError();
 
-    Trace(" FAIL\n");
+    Trace("\n");
+
     ShowError(MB_OK|MB_ICONSTOP, err, "SetupGetInfFileList()");
     return FALSE;
   }
@@ -597,13 +439,15 @@ bool InfFile::UninstallAllInfFiles(
     if (!SetupGetInfFileList(NULL, INF_STYLE_WIN4, pList, size, NULL)) {
       DWORD err = GetLastError();
 
-      Trace(" FAIL\n");
+      Trace("\n");
+
       ShowError(MB_OK|MB_ICONSTOP, err, "SetupGetInfFileList(%lu)", (unsigned long)size);
       LocalFree(pList);
       return FALSE;
     }
   } else {
-    Trace(" FAIL\n");
+    Trace("\n");
+
     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)size);
     return FALSE;
@@ -611,15 +455,15 @@ bool InfFile::UninstallAllInfFiles(
 
   Trace(".");
 
-  char windir[MAX_PATH + 1];
+  char windir[MAX_PATH];
 
   size = GetEnvironmentVariable("windir", windir, sizeof(windir)/sizeof(windir[0]));
 
   if (!size || size >= sizeof(windir)/sizeof(windir[0])) {
     DWORD err = !size ? GetLastError() : ERROR_BUFFER_OVERFLOW;
 
-    Trace(" FAIL\n");
     ShowError(MB_OK|MB_ICONSTOP, err, "GetEnvironmentVariable(windir)");
+
     LocalFree(pList);
     return FALSE;
   }
@@ -648,64 +492,30 @@ bool InfFile::UninstallAllInfFiles(
     if (++i%m == 0)
       Trace(".");
 
-    char infPath[MAX_PATH + 1];
+    char infPath[MAX_PATH];
 
-    if ((p[0] == 'O' || p[0] == 'o') &&
-        (p[1] == 'E' || p[1] == 'e') &&
-        (p[2] == 'M' || p[2] == 'm') &&
-        SNPRINTF(infPath, sizeof(infPath)/sizeof(infPath[0]), "%s\\inf\\%s", windir, p) > 0)
-    {
+    if (SNPRINTF(infPath, sizeof(infPath)/sizeof(infPath[0]), "%s\\inf\\%s", windir, p) > 0) {
       InfFile infFile(infPath, NULL);
-      bool doUninstall;
 
-      if (IsPathInList(infFile.Path(), ppOemPathExcludeList)) {
-        //Trace("\nSkipped %s\n", infFile.Path());
-        doUninstall = FALSE;
-      }
-      else
-      if (TestUninstall(infFile, pInfFileUninstallList, FALSE)) {
-        doUninstall = TRUE;
-      }
-      else
-      if (TestUninstall(infFile, pInfFileUninstallList, TRUE)) {
-        int res;
-
-        res = ShowMsg(MB_YESNO,
+      if (infFile.Compare(_pClassGUID, _pClass, _pProvider, FALSE)) {
+        if (ShowMsg(MB_YESNO,
             "The file %s possible should be deleted too.\n"
             "\n"
             "%s:\n"
             "  ClassGUID = %s\n"
             "  Class = %s\n"
             "  Provider = %s\n"
-            "  DriverVer = %s\n"
-            "  UninstallInfTag = %s\n"
             "\n"
             "Would you like to delete it?\n",
             infFile.Path(),
             infFile.Path(),
             infFile.ClassGUID(FALSE),
             infFile.Class(FALSE),
-            infFile.Provider(FALSE),
-            infFile.DriverVer(FALSE),
-            infFile.UninstallInfTag(FALSE));
-
-        if (res == 0)
-          res = IDNO;
-
-        doUninstall = (res == IDYES);
-      } else {
-        doUninstall = FALSE;
-      }
-
-      if (doUninstall) {
-        Trace("\n");
-
-        if (infFile.hInf != INVALID_HANDLE_VALUE) {
-          SetupCloseInfFile(infFile.hInf);
-          infFile.hInf = INVALID_HANDLE_VALUE;
+            infFile.Provider(FALSE)) == IDYES)
+        {
+          Trace("\n");
+          UninstallInf(infFile.Path());
         }
-
-        UninstallInf(infFile.Path());
       }
     }
 

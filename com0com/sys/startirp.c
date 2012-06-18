@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2012 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,16 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.20  2010/08/04 10:38:56  vfrolov
- * Minimized PREfast noise
- *
- * Revision 1.19  2009/09/21 08:49:56  vfrolov
- * Added missing removing from queue
- * (Thanks Kirill Bagrinovsky)
- *
- * Revision 1.18  2007/06/20 10:37:47  vfrolov
- * Fixed double decrementing of amountInWriteQueue on CANCEL
- *
  * Revision 1.17  2007/06/04 15:24:33  vfrolov
  * Fixed open reject just after close in exclusiveMode
  *
@@ -94,6 +84,31 @@
  */
 #define FILE_ID 2
 
+PC0C_IRP_STATE GetIrpState(IN PIRP pIrp)
+{
+  PIO_STACK_LOCATION pIrpStack = IoGetCurrentIrpStackLocation(pIrp);
+
+  switch (pIrpStack->MajorFunction) {
+  case IRP_MJ_WRITE:
+    return (PC0C_IRP_STATE)&pIrpStack->Parameters.Write.Key;
+  case IRP_MJ_READ:
+    return (PC0C_IRP_STATE)&pIrpStack->Parameters.Read.Key;
+  case IRP_MJ_DEVICE_CONTROL:
+    switch (pIrpStack->Parameters.DeviceIoControl.IoControlCode) {
+    case IOCTL_SERIAL_WAIT_ON_MASK:
+    case IOCTL_SERIAL_IMMEDIATE_CHAR:
+    case IOCTL_SERIAL_XOFF_COUNTER:
+      return (PC0C_IRP_STATE)&pIrpStack->Parameters.DeviceIoControl.Type3InputBuffer;
+    }
+    break;
+  case IRP_MJ_FLUSH_BUFFERS:
+  case IRP_MJ_CLOSE:
+    return (PC0C_IRP_STATE)&pIrpStack->Parameters.Others.Argument1;
+  }
+
+  return NULL;
+}
+
 VOID ShiftQueue(PC0C_IRP_QUEUE pQueue)
 {
   if (pQueue->pCurrent) {
@@ -125,7 +140,6 @@ VOID ShiftQueue(PC0C_IRP_QUEUE pQueue)
   }
 }
 
-DRIVER_CANCEL CancelRoutine;
 VOID CancelRoutine(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 {
   LIST_ENTRY queueToComplete;
@@ -408,8 +422,6 @@ NTSTATUS FdoPortStartIrp(
             pQueue->pCurrent->IoStatus.Information)
         {
           if (pIrpStack->MajorFunction == IRP_MJ_FLUSH_BUFFERS) {
-            RemoveEntryList(&pIrp->Tail.Overlay.ListEntry);
-            pState->flags &= ~C0C_IRP_FLAG_IN_QUEUE;
             status = NoPending(pIrp, STATUS_SUCCESS);
           } else {
             PIRP pIrpXoffCounter = pQueue->pCurrent;

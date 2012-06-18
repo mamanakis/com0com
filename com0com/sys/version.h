@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2012 Vyacheslav Frolov
+ * Copyright (c) 2005-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,10 +22,10 @@
 #ifndef _C0C_VERSION_H_
 #define _C0C_VERSION_H_
 
-#define C0C_COPYRIGHT_YEARS "2004-2012"
+#define C0C_COPYRIGHT_YEARS "2004-2008"
 
-#define C0C_V1 3
-#define C0C_V2 0
+#define C0C_V1 2
+#define C0C_V2 1
 #define C0C_V3 0
 #define C0C_V4 0
 

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2011 Vyacheslav Frolov
+ * Copyright (c) 2004-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,21 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.13  2010/07/29 12:10:04  vfrolov
- * Added handling of IRPs that must be handled
- *
- * Revision 1.12  2010/07/21 07:39:01  vfrolov
- * Added handling of IRPs that all PnP drivers must handle
- *
- * Revision 1.11  2010/07/20 07:00:16  vfrolov
- * Fixed memory leak
- *
- * Revision 1.10  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.9  2007/11/23 08:58:48  vfrolov
- * Added UniqueID capability
- *
  * Revision 1.8  2007/06/04 15:24:33  vfrolov
  * Fixed open reject just after close in exclusiveMode
  *
@@ -103,7 +88,6 @@ NTSTATUS FdoBusPnp(
         if (pDevExt->childs[i].pDevExt)
           countPdos++;
       }
-
       if (!countPdos)
         break;
 
@@ -123,47 +107,16 @@ NTSTATUS FdoBusPnp(
                                       countRelations * sizeof (PDEVICE_OBJECT));
 
       for (i = 0 ; i < 2 ; i++) {
-        PC0C_PDOPORT_EXTENSION  pPhDevExt;
-
-        pPhDevExt = pDevExt->childs[i].pDevExt;
-
-        if (pPhDevExt) {
-          if (!pDevExt->childs[i].ioPort.pDevExt) {
-            UNICODE_STRING portName;
-            UNICODE_STRING portRegistryPath;
-
-            RtlInitUnicodeString(&portRegistryPath, NULL);
-            StrAppendPortParametersRegistryPath(&status, &portRegistryPath, pPhDevExt->portName);
-
-            RtlInitUnicodeString(&portName, NULL);
-            StrAppendParameterPortName(&status, &portName, portRegistryPath.Buffer);
-
-            StrFree(&portRegistryPath);
-
-            if (NT_SUCCESS(status) && portName.Length &&
-                _wcsicmp(C0C_PORT_NAME_COMCLASS, portName.Buffer) == 0)
-            {
-              pDevExt->childs[i].ioPort.isComClass = TRUE;
-              Trace0((PC0C_COMMON_EXTENSION)pPhDevExt, L"Port class set to COM");
-            } else {
-              pDevExt->childs[i].ioPort.isComClass = FALSE;
-              Trace0((PC0C_COMMON_EXTENSION)pPhDevExt, L"Port class set to CNC");
-            }
-
-            StrFree(&portName);
-
-            status = STATUS_SUCCESS;
-          }
-
-          pRelations->Objects[countRelations++] = pPhDevExt->pDevObj;
-          ObReferenceObject(pPhDevExt->pDevObj);
+        if (pDevExt->childs[i].pDevExt) {
+          pRelations->Objects[countRelations++] = pDevExt->childs[i].pDevExt->pDevObj;
+          ObReferenceObject(pDevExt->childs[i].pDevExt->pDevObj);
         }
       }
 
       pRelations->Count = countRelations;
 
       if (pRelationsPrev)
-        ExFreePool(pRelationsPrev);
+        C0C_FREE_POOL(pRelationsPrev);
 
       pIrp->IoStatus.Information = (ULONG_PTR)pRelations;
       pIrp->IoStatus.Status = STATUS_SUCCESS;
@@ -172,16 +125,6 @@ NTSTATUS FdoBusPnp(
   case IRP_MN_REMOVE_DEVICE:
     RemoveFdoBus(pDevExt);
     pDevExt = NULL;
-    pIrp->IoStatus.Status = STATUS_SUCCESS;
-    break;
-  case IRP_MN_START_DEVICE:
-  case IRP_MN_STOP_DEVICE:
-  case IRP_MN_QUERY_STOP_DEVICE:
-  case IRP_MN_CANCEL_STOP_DEVICE:
-  case IRP_MN_QUERY_REMOVE_DEVICE:
-  case IRP_MN_CANCEL_REMOVE_DEVICE:
-  case IRP_MN_SURPRISE_REMOVAL:
-    pIrp->IoStatus.Status = STATUS_SUCCESS;
     break;
   }
 
@@ -215,15 +158,10 @@ NTSTATUS PdoPortQueryId(
     status = DupStrW(&pIDs, C0C_PORT_DEVICE_ID, FALSE);
     break;
   case BusQueryHardwareIDs:
-    status = DupStrW(
-        &pIDs,
-        (pDevExt->pIoPortLocal && pDevExt->pIoPortLocal->isComClass) ?
-            C0C_PORT_HARDWARE_IDS_COMCLASS :
-            C0C_PORT_HARDWARE_IDS_CNCCLASS,
-        TRUE);
+    status = DupStrW(&pIDs, C0C_PORT_HARDWARE_IDS, TRUE);
     break;
   case BusQueryCompatibleIDs:
-    status = DupStrW(&pIDs, L"\0", TRUE);
+    status = DupStrW(&pIDs, C0C_PORT_COMPATIBLE_IDS, TRUE);
     break;
   case BusQueryInstanceID:
     status = DupStrW(&pIDs, pDevExt->portName, FALSE);
@@ -252,9 +190,6 @@ NTSTATUS PdoPortQueryCaps(
 
   pCaps->UniqueID = TRUE;
 
-  pCaps->Address = pCaps->UINumber =
-    (pDevExt->pIoPortLocal == &pDevExt->pBusExt->childs[0].ioPort ? 0 : 1);
-
   return STATUS_SUCCESS;
 }
 
@@ -273,7 +208,8 @@ NTSTATUS PdoPortQueryDevText(
       UNICODE_STRING portText;
 
       RtlInitUnicodeString(&portText, NULL);
-      StrAppendStr0(&status, &portText, L"com0com - serial port emulator");
+      StrAppendStr0(&status, &portText, L"Port ");
+      StrAppendStr0(&status, &portText, pDevExt->portName);
 
       if (NT_SUCCESS(status))
         pIrp->IoStatus.Information = (ULONG_PTR)portText.Buffer;
@@ -321,7 +257,7 @@ NTSTATUS PdoPortPnp(
     IN PC0C_PDOPORT_EXTENSION pDevExt,
     IN PIRP                   pIrp)
 {
-  NTSTATUS status = pIrp->IoStatus.Status;
+  NTSTATUS status;
   PIO_STACK_LOCATION pIrpStack = IoGetCurrentIrpStackLocation(pIrp);
 
   switch (pIrpStack->MinorFunction) {
@@ -339,38 +275,16 @@ NTSTATUS PdoPortPnp(
     break;
   case IRP_MN_QUERY_DEVICE_RELATIONS:
     switch (pIrpStack->Parameters.QueryDeviceRelations.Type) {
-    case TargetDeviceRelation: {
-      PDEVICE_RELATIONS pRelations;
-
-      HALT_UNLESS(pIrp->IoStatus.Information == 0);
-
-      if (pIrp->IoStatus.Information != 0)
-        break;
-
-      pRelations = (PDEVICE_RELATIONS)C0C_ALLOCATE_POOL(PagedPool, sizeof(DEVICE_RELATIONS));
-
-      if (!pRelations) {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        break;
-      }
-
-      pRelations->Count = 1;
-      pRelations->Objects[0] = pDevExt->pDevObj;
-      ObReferenceObject(pDevExt->pDevObj);
-      pIrp->IoStatus.Information = (ULONG_PTR)pRelations;
+    case RemovalRelations:
       status = STATUS_SUCCESS;
       break;
-    }
-    case RemovalRelations:
     case BusRelations:
     case EjectionRelations:
     case PowerRelations:
+    case TargetDeviceRelation:
     default:
-      break;
+      status = pIrp->IoStatus.Status;
     }
-    break;
-  case IRP_MN_DEVICE_USAGE_NOTIFICATION:
-    status = STATUS_UNSUCCESSFUL;
     break;
   case IRP_MN_REMOVE_DEVICE:
   case IRP_MN_START_DEVICE:
@@ -384,7 +298,7 @@ NTSTATUS PdoPortPnp(
     status = STATUS_SUCCESS;
     break;
   default:
-    break;
+    status = pIrp->IoStatus.Status;
   }
 
   TraceIrp("PNP", pIrp, &status, TRACE_FLAG_RESULTS);
@@ -438,20 +352,10 @@ NTSTATUS FdoPortPnp(
   case IRP_MN_QUERY_REMOVE_DEVICE:
     if (pDevExt->openCount)
       status = STATUS_DEVICE_BUSY;
-    else
-      pIrp->IoStatus.Status = STATUS_SUCCESS;
     break;
   case IRP_MN_REMOVE_DEVICE:
     RemoveFdoPort(pDevExt);
     pDevExt = NULL;
-    pIrp->IoStatus.Status = STATUS_SUCCESS;
-    break;
-  case IRP_MN_START_DEVICE:
-  case IRP_MN_STOP_DEVICE:
-  case IRP_MN_QUERY_STOP_DEVICE:
-  case IRP_MN_CANCEL_STOP_DEVICE:
-  case IRP_MN_SURPRISE_REMOVAL:
-    pIrp->IoStatus.Status = STATUS_SUCCESS;
     break;
   }
 

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2012 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,33 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.14  2012/06/04 06:02:14  vfrolov
- * Added commented code with SetupSetNonInteractiveMode
- *
- * Revision 1.13  2011/12/15 15:51:48  vfrolov
- * Fixed types
- *
- * Revision 1.12  2011/12/08 09:32:04  vfrolov
- * Fixed unreadable console output by changing LANG_NEUTRAL to LANG_ENGLISH
- *
- * Revision 1.11  2011/07/15 16:09:05  vfrolov
- * Disabled MessageBox() for silent mode and added default processing
- *
- * Revision 1.10  2011/07/13 17:42:46  vfrolov
- * Added tracing of dialogs
- *
- * Revision 1.9  2010/07/30 09:19:29  vfrolov
- * Added STRDUP()
- *
- * Revision 1.8  2009/11/09 11:16:43  vfrolov
- * Added restoring last error
- *
- * Revision 1.7  2009/02/16 10:32:56  vfrolov
- * Added Silent() and PromptReboot()
- *
- * Revision 1.6  2007/10/19 16:11:56  vfrolov
- * Added ability to redirect console output
- *
  * Revision 1.5  2007/09/20 12:29:03  vfrolov
  * Added return value to SetOutputFile()
  *
@@ -71,19 +44,18 @@
 #include "msg.h"
 #include "utils.h"
 
-static char *pOutputFile = NULL;
-static char title[80] = "";
-static bool silent = FALSE;
+char *pOutputFile = NULL;
+char title[80] = "";
 
 ///////////////////////////////////////////////////////////////
 static int ShowMsgDefault(LPCSTR pText, UINT type)
 {
-  return Silent() ? 0 : MessageBox(NULL, pText, title, type|MB_SETFOREGROUND);
+  return MessageBox(NULL, pText, title, type|MB_SETFOREGROUND);
 }
 
 static int (* pShowMsg)(LPCSTR pText, UINT type) = ShowMsgDefault;
 ///////////////////////////////////////////////////////////////
-static bool isConsoleOpen = FALSE;
+static BOOL isConsoleOpen = FALSE;
 
 static void ConsoleWriteReadDefault(LPSTR pReadBuf, DWORD lenReadBuf, LPCSTR pText)
 {
@@ -153,45 +125,13 @@ static void TraceDefault(LPCSTR pText)
 
 static void (* pTrace)(LPCSTR pText) = TraceDefault;
 ///////////////////////////////////////////////////////////////
-static int ShowMsg(LPCSTR pText, UINT type)
-{
-  Trace("\nDIALOG: {\n%s} ... ", pText);
-
-#define TRACECASE(p, s) case p##s: Trace(#s); break;
-
-  int res = pShowMsg(pText, type);
-
-  switch(res) {
-    TRACECASE(ID, OK)
-    TRACECASE(ID, CANCEL)
-    TRACECASE(ID, ABORT)
-    TRACECASE(ID, RETRY)
-    TRACECASE(ID, IGNORE)
-    TRACECASE(ID, YES)
-    TRACECASE(ID, NO)
-    TRACECASE(ID, CLOSE)
-    TRACECASE(ID, HELP)
-    TRACECASE(ID, TRYAGAIN)
-    TRACECASE(ID, CONTINUE)
-    case 0:
-      Trace("ERROR");
-      break;
-    default:
-      Trace("%d", res);
-  }
-
-  Trace("\n");
-
-  return res;
-}
-///////////////////////////////////////////////////////////////
 static int ShowMsgVA(UINT type, const char *pFmt, va_list va)
 {
   char buf[1024];
 
   VSNPRINTF(buf, sizeof(buf)/sizeof(buf[0]), pFmt, va);
 
-  return ShowMsg(buf, type);
+  return pShowMsg(buf, type);
 }
 ///////////////////////////////////////////////////////////////
 static int ShowErrorVA(UINT type, DWORD err, const char *pFmt, va_list va)
@@ -206,21 +146,18 @@ static int ShowErrorVA(UINT type, DWORD err, const char *pFmt, va_list va)
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
       NULL,
       err,
-      MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
       (LPTSTR) &pMsgBuf,
       0,
       NULL);
 
   int len = lstrlen(buf);
 
-  if ((err & 0xFFFF0000) == 0)
-    SNPRINTF(buf + len, sizeof(buf)/sizeof(buf[0]) - len, "\nERROR: %lu - %s\n", (unsigned long)err, pMsgBuf);
-  else
-    SNPRINTF(buf + len, sizeof(buf)/sizeof(buf[0]) - len, "\nERROR: 0x%08lX - %s\n", (unsigned long)err, pMsgBuf);
+  SNPRINTF(buf + len, sizeof(buf)/sizeof(buf[0]) - len, "\nERROR: 0x%08lX - %s\n", (unsigned long)err, pMsgBuf);
 
   LocalFree(pMsgBuf);
 
-  return ShowMsg(buf, type);
+  return pShowMsg(buf, type);
 }
 ///////////////////////////////////////////////////////////////
 int ShowMsg(UINT type, const char *pFmt, ...)
@@ -275,11 +212,7 @@ void Trace(const char *pFmt, ...)
 
   va_end(va);
 
-  DWORD err = GetLastError();
-
   pTrace(buf);
-
-  SetLastError(err);
 }
 ///////////////////////////////////////////////////////////////
 void ConsoleWriteRead(char *pReadBuf, int lenReadBuf, const char *pFmt, ...)
@@ -293,11 +226,7 @@ void ConsoleWriteRead(char *pReadBuf, int lenReadBuf, const char *pFmt, ...)
 
   va_end(va);
 
-  DWORD err = GetLastError();
-
   pConsole(pReadBuf, lenReadBuf, buf);
-
-  SetLastError(err);
 }
 ///////////////////////////////////////////////////////////////
 void ConsoleWrite(const char *pFmt, ...)
@@ -311,14 +240,10 @@ void ConsoleWrite(const char *pFmt, ...)
 
   va_end(va);
 
-  DWORD err = GetLastError();
-
   pConsole(NULL, 0, buf);
-
-  SetLastError(err);
 }
 ///////////////////////////////////////////////////////////////
-bool IsConsoleOpen()
+BOOL IsConsoleOpen()
 {
   return isConsoleOpen;
 }
@@ -328,7 +253,7 @@ void SetTitle(const char *pTitle)
   SNPRINTF(title, sizeof(title)/sizeof(title[0]), "%s", pTitle);
 }
 ///////////////////////////////////////////////////////////////
-bool SetOutputFile(const char *pFile)
+BOOL SetOutputFile(const char *pFile)
 {
   if (pOutputFile) {
     LocalFree(pOutputFile);
@@ -336,10 +261,17 @@ bool SetOutputFile(const char *pFile)
   }
 
   if (pFile) {
-    pOutputFile = STRDUP(pFile);
+    DWORD size = (lstrlen(pFile) + 1)*sizeof(*pFile);
 
-    if (!pOutputFile)
+    pOutputFile = (char *)LocalAlloc(LPTR, size);
+
+    if (pOutputFile) {
+      lstrcpy(pOutputFile, pFile);
+    } else {
+      SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+      ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)size);
       return FALSE;
+    }
   }
 
   return TRUE;
@@ -348,40 +280,5 @@ bool SetOutputFile(const char *pFile)
 const char *GetOutputFile()
 {
   return pOutputFile;
-}
-///////////////////////////////////////////////////////////////
-bool Silent()
-{
-  return silent;
-}
-///////////////////////////////////////////////////////////////
-void Silent(bool val)
-{
-  silent = val;
-
-  /*
-  typedef BOOL (WINAPI *PSETUPSETNONINTERACTIVEMODE)(IN BOOL);
-  static PSETUPSETNONINTERACTIVEMODE pSetupSetNonInteractiveMode = NULL;
-
-  if(!pSetupSetNonInteractiveMode) {
-    HMODULE hModule = GetModuleHandle("setupapi.dll");
-
-    if (hModule) {
-      pSetupSetNonInteractiveMode =
-          (PSETUPSETNONINTERACTIVEMODE)GetProcAddress(hModule, "SetupSetNonInteractiveMode");
-    }
-  }
-
-  if (pSetupSetNonInteractiveMode)
-    pSetupSetNonInteractiveMode(silent);
-  */
-}
-///////////////////////////////////////////////////////////////
-void PromptReboot()
-{
-  Trace("\nReboot required.\n");
-
-  if (!silent)
-    SetupPromptReboot(NULL, NULL, FALSE);
 }
 ///////////////////////////////////////////////////////////////

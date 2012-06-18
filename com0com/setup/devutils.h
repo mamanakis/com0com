@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2012 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,30 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.13  2011/12/15 15:51:48  vfrolov
- * Fixed types
- *
- * Revision 1.12  2011/07/13 17:39:56  vfrolov
- * Fixed result treatment of UpdateDriverForPlugAndPlayDevices()
- *
- * Revision 1.11  2010/07/29 12:18:43  vfrolov
- * Fixed waiting stuff
- *
- * Revision 1.10  2010/07/15 18:11:10  vfrolov
- * Fixed --wait option for Ports class
- *
- * Revision 1.9  2010/06/07 07:03:31  vfrolov
- * Added wrapper UpdateDriver() for UpdateDriverForPlugAndPlayDevices()
- *
- * Revision 1.8  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.7  2009/02/11 07:35:22  vfrolov
- * Added --no-update option
- *
- * Revision 1.6  2007/10/01 15:01:35  vfrolov
- * Added pDevInstID parameter to InstallDevice()
- *
  * Revision 1.5  2007/09/25 12:42:49  vfrolov
  * Fixed update command (bug if multiple pairs active)
  * Fixed uninstall command (restore active ports on cancell)
@@ -65,6 +41,7 @@
 #define _C0C_DEVUTILS_H_
 
 ///////////////////////////////////////////////////////////////
+
 class DevProperties {
   public:
     DevProperties() : pDevId(NULL), pPhObjName(NULL), pLocation(NULL) {}
@@ -94,27 +71,24 @@ class DevProperties {
 
 typedef const DevProperties *PCDevProperties;
 
+class InfFile;
 class Stack;
 
-///////////////////////////////////////////////////////////////
-typedef bool CNC_DEV_CALLBACK(
+typedef BOOL (* PDEVCALLBACK)(
     HDEVINFO hDevInfo,
     PSP_DEVINFO_DATA pDevInfoData,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired,
     void *pParam);
 
-typedef CNC_DEV_CALLBACK *PCNC_DEV_CALLBACK;
 ///////////////////////////////////////////////////////////////
-typedef bool CNC_ENUM_FILTER(const char *pHardwareId);
-typedef CNC_ENUM_FILTER *PCNC_ENUM_FILTER;
-///////////////////////////////////////////////////////////////
+
 int EnumDevices(
-    PCNC_ENUM_FILTER pFilter,
+    InfFile &infFile,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired,
-    PCNC_DEV_CALLBACK pDevCallBack,
-    void *pDevCallBackParam);
+    PDEVCALLBACK pDevCallBack,
+    void *pCallBackParam);
 
 int DisableDevice(
     HDEVINFO hDevInfo,
@@ -123,55 +97,40 @@ int DisableDevice(
     BOOL *pRebootRequired,
     Stack *pDevPropertiesStack);
 
-bool DisableDevices(
-    PCNC_ENUM_FILTER pFilter,
+BOOL DisableDevices(
+    InfFile &infFile,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired,
     Stack *pDevPropertiesStack);
 
-bool EnableDevices(
-    PCNC_ENUM_FILTER pFilter,
+BOOL EnableDevices(
+    InfFile &infFile,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired);
 
-bool RestartDevices(
-    PCNC_ENUM_FILTER pFilter,
+BOOL RestartDevices(
+    InfFile &infFile,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired);
 
-bool RemoveDevice(
+BOOL RemoveDevice(
     HDEVINFO hDevInfo,
     PSP_DEVINFO_DATA pDevInfoData,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired);
 
-bool RemoveDevices(
-    PCNC_ENUM_FILTER pFilter,
+BOOL RemoveDevices(
+    InfFile &infFile,
     PCDevProperties pDevProperties,
     BOOL *pRebootRequired);
 
-bool ReenumerateDeviceNode(
-    PSP_DEVINFO_DATA pDevInfoData);
-
-int UpdateDriver(
-    const char *pInfFilePath,
-    const char *pHardwareId,
-    DWORD flags,
-    bool mandatory,
-    BOOL *pRebootRequired);
-
-bool InstallDevice(
-    const char *pInfFilePath,
+BOOL InstallDevice(
+    InfFile &infFile,
     const char *pDevId,
     const char *pDevInstID,
-    PCNC_DEV_CALLBACK pDevCallBack,
-    void *pDevCallBackParam,
-    bool updateDriver,
-    BOOL *pRebootRequired);
+    PDEVCALLBACK pDevCallBack,
+    void *pCallBackParam);
 
-bool WaitNoPendingInstallEvents(
-    int timeLimit,
-    bool repeate = FALSE);
 ///////////////////////////////////////////////////////////////
 
 #endif /* _C0C_DEVUTILS_H_ */

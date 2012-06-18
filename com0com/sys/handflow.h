@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2008 Vyacheslav Frolov
+ * Copyright (c) 2005-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.4  2006/06/21 16:23:57  vfrolov
- * Fixed possible BSOD after one port of pair removal
- *
  * Revision 1.3  2006/05/17 15:31:14  vfrolov
  * Implemented SERIAL_TRANSMIT_TOGGLE
  *
@@ -30,6 +27,7 @@
  *
  * Revision 1.1  2006/01/10 10:12:05  vfrolov
  * Initial revision
+ *
  *
  */
 
@@ -53,6 +51,6 @@ VOID UpdateTransmitToggle(
 VOID SetLimit(PC0C_IO_PORT pIoPort);
 VOID SetModemStatusHolding(PC0C_IO_PORT pIoPort);
 VOID SetXonXoffHolding(PC0C_IO_PORT pIoPort, short xonXoff);
-VOID SetBreakHolding(PC0C_IO_PORT pIoPort, BOOLEAN on, PLIST_ENTRY pQueueToComplete);
+VOID SetBreakHolding(PC0C_IO_PORT pIoPort, BOOLEAN on);
 
 #endif /* _C0C_FLOW_H_ */

@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2011 Vyacheslav Frolov
+ * Copyright (c) 2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,12 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.3  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.2  2006/10/19 13:28:50  vfrolov
- * Added InfFile::UninstallAllInfFiles()
- *
  * Revision 1.1  2006/07/28 12:16:42  vfrolov
  * Initial revision
  *
@@ -36,50 +30,34 @@
 
 class InfFile {
   public:
-    struct InfFileField {
-      const char *pSection;
-      const char *pKey;
-      int         nField;
-      const char *pFieldValue;
-    };
-
-    struct InfFileUninstall {
-      const InfFile::InfFileField *pRequiredFields;
-      bool queryConfirmation;
-    };
-
-  public:
     InfFile(const char *pInfName, const char *pNearPath);
     ~InfFile();
 
-    bool Test(const InfFileField *pFields, bool showErrors = TRUE) const;
-
     const char *Path() const { return pPath; }
-    const char *OemPath(bool showErrors = TRUE) const;
-    const char *ClassGUID(bool showErrors = TRUE) const;
-    const char *Class(bool showErrors = TRUE) const;
-    const char *Provider(bool showErrors = TRUE) const;
-    const char *DriverVer(bool showErrors = TRUE) const;
-    const char *UninstallInfTag(bool showErrors = TRUE) const;
+    const char *ClassGUID(BOOL showErrors = TRUE) const;
+    const char *Class(BOOL showErrors = TRUE) const;
+    const char *Provider(BOOL showErrors = TRUE) const;
 
-    bool UninstallFiles(const char *pFilesSection) const;
+    BOOL Compare(
+        const char *_pClassGUID,
+        const char *_pClass,
+        const char *_pProvider,
+        BOOL showErrors = TRUE) const;
 
-    bool InstallOEMInf() const;
-    bool UninstallOEMInf() const;
+    BOOL UninstallFiles(const char *pFilesSection) const;
 
-    static bool UninstallAllInfFiles(
-        const InfFileUninstall *pInfFileUninstallList,
-        const char *const *ppOemPathExcludeList);
+    BOOL InstallOEMInf() const;
+    BOOL UninstallOEMInf() const;
 
+    static BOOL UninstallAllInfFiles(
+        const char *_pClassGUID,
+        const char *_pClass,
+        const char *_pProvider);
   protected:
     char *pPath;
-    mutable char *pOemPath;
-    mutable char *pClassGUID;
-    mutable char *pClass;
-    mutable char *pProvider;
-    mutable char *pDriverVer;
-    mutable char *pUninstallInfTag;
-    mutable HINF hInf;
+    char *pClassGUID;
+    char *pClass;
+    char *pProvider;
 };
 
 #endif /* _C0C_PARAMS_H_ */

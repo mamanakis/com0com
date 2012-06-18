@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2011 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,21 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.18  2010/08/10 16:45:58  vfrolov
- * Added STATUS_WAIT_1..3
- *
- * Revision 1.17  2010/08/09 16:08:37  vfrolov
- * Added STATUS_NOT_IMPLEMENTED
- *
- * Revision 1.16  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.15  2008/12/02 16:10:09  vfrolov
- * Separated tracing and debuging
- *
- * Revision 1.14  2008/05/04 09:51:45  vfrolov
- * Implemented HiddenMode option
- *
  * Revision 1.13  2007/09/17 14:31:06  vfrolov
  * Implemented pseudo pin OPEN
  *
@@ -78,7 +63,7 @@
 
 #include "precomp.h"
 
-#if ENABLE_TRACING
+#if DBG
 
 #define TOCODE2NAME1(s) { (ULONG)s, #s }
 #define TOCODE2NAME(p, s) { (ULONG)p##s, #s }
@@ -310,24 +295,21 @@ CODE2NAME codeNameTableStatus[] = {
   TOCODE2NAME(STATUS_, ACCESS_DENIED),
   TOCODE2NAME(STATUS_, BUFFER_TOO_SMALL),
   TOCODE2NAME(STATUS_, CANCELLED),
-  TOCODE2NAME(STATUS_, DEVICE_BUSY),
+  TOCODE2NAME(STATUS_, INSUFFICIENT_RESOURCES),
   TOCODE2NAME(STATUS_, INSUFFICIENT_RESOURCES),
   TOCODE2NAME(STATUS_, INVALID_DEVICE_REQUEST),
   TOCODE2NAME(STATUS_, INVALID_PARAMETER),
   TOCODE2NAME(STATUS_, NO_SUCH_DEVICE),
-  TOCODE2NAME(STATUS_, NOT_IMPLEMENTED),
   TOCODE2NAME(STATUS_, NOT_SUPPORTED),
-  TOCODE2NAME(STATUS_, OBJECT_NAME_NOT_FOUND),
   TOCODE2NAME(STATUS_, PENDING),
-  TOCODE2NAME(STATUS_, SERIAL_COUNTER_TIMEOUT),
-  TOCODE2NAME(STATUS_, SERIAL_MORE_WRITES),
   TOCODE2NAME(STATUS_, SUCCESS),
   TOCODE2NAME(STATUS_, TIMEOUT),
   TOCODE2NAME(STATUS_, UNSUCCESSFUL),
-  TOCODE2NAME(STATUS_, WAIT_1),
-  TOCODE2NAME(STATUS_, WAIT_2),
-  TOCODE2NAME(STATUS_, WAIT_3),
+  TOCODE2NAME(STATUS_, OBJECT_NAME_NOT_FOUND),
+  TOCODE2NAME(STATUS_, DEVICE_BUSY),
   TOCODE2NAME(STATUS_, WMI_GUID_NOT_FOUND),
+  TOCODE2NAME(STATUS_, SERIAL_COUNTER_TIMEOUT),
+  TOCODE2NAME(STATUS_, SERIAL_MORE_WRITES),
   {0, NULL}
 };
 
@@ -408,11 +390,14 @@ CODE2NAME codeNameTableHoldReasons[] = {
 };
 
 CODE2NAME codeNameTableFileInformationClass[] = {
+#ifndef _WDMDDK_
   TOCODE2NAME1(FileDirectoryInformation),
   TOCODE2NAME1(FileFullDirectoryInformation),
   TOCODE2NAME1(FileBothDirectoryInformation),
+#endif
   TOCODE2NAME1(FileBasicInformation),
   TOCODE2NAME1(FileStandardInformation),
+#ifndef _WDMDDK_
   TOCODE2NAME1(FileInternalInformation),
   TOCODE2NAME1(FileEaInformation),
   TOCODE2NAME1(FileAccessInformation),
@@ -421,13 +406,17 @@ CODE2NAME codeNameTableFileInformationClass[] = {
   TOCODE2NAME1(FileLinkInformation),
   TOCODE2NAME1(FileNamesInformation),
   TOCODE2NAME1(FileDispositionInformation),
+#endif
   TOCODE2NAME1(FilePositionInformation),
+#ifndef _WDMDDK_
   TOCODE2NAME1(FileFullEaInformation),
   TOCODE2NAME1(FileModeInformation),
   TOCODE2NAME1(FileAlignmentInformation),
   TOCODE2NAME1(FileAllInformation),
   TOCODE2NAME1(FileAllocationInformation),
+#endif
   TOCODE2NAME1(FileEndOfFileInformation),
+#ifndef _WDMDDK_
   TOCODE2NAME1(FileAlternateNameInformation),
   TOCODE2NAME1(FileStreamInformation),
   TOCODE2NAME1(FilePipeInformation),
@@ -445,11 +434,12 @@ CODE2NAME codeNameTableFileInformationClass[] = {
   TOCODE2NAME1(FileAttributeTagInformation),
   TOCODE2NAME1(FileTrackingInformation),
   TOCODE2NAME1(FileMaximumInformation),
+#endif
   {0, NULL}
 };
 
 CODE2NAME codeNameTableShowPort[] = {
-  TOCODE2NAME(C0C_SHOW_, PORTNAME),
+  TOCODE2NAME(C0C_SHOW_, SETNAME),
   TOCODE2NAME(C0C_SHOW_, SYMLINK),
   TOCODE2NAME(C0C_SHOW_, DEVICEMAP),
   TOCODE2NAME(C0C_SHOW_, INTERFACE),
@@ -457,6 +447,6 @@ CODE2NAME codeNameTableShowPort[] = {
   {0, NULL}
 };
 
-#else /* ENABLE_TRACING */
+#else /* DBG */
   #pragma warning(disable:4206) // nonstandard extension used : translation unit is empty
-#endif /* ENABLE_TRACING */
+#endif /* DBG */

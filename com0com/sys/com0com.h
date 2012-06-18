@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2012 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,37 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.52  2011/12/06 16:03:22  vfrolov
- * Added cleaning high data bits for less then 8 bit data
- * Added AllDataBits option to force 8 bit data
- *
- * Revision 1.51  2010/08/09 06:02:40  vfrolov
- * Eliminated accessing undocumented structure members
- *
- * Revision 1.50  2010/08/04 10:38:55  vfrolov
- * Minimized PREfast noise
- *
- * Revision 1.49  2010/06/01 06:14:10  vfrolov
- * Improved driver updating
- *
- * Revision 1.48  2010/05/27 11:16:46  vfrolov
- * Added ability to put the port to the Ports class
- *
- * Revision 1.47  2008/10/30 07:54:37  vfrolov
- * Improved BREAK emulation
- *
- * Revision 1.46  2008/09/17 07:58:32  vfrolov
- * Added AddRTTO and AddRITO parameters
- *
- * Revision 1.45  2008/07/11 10:38:00  vfrolov
- * Added nonstandard ability to enable LSR insertion on BREAK OFF
- *
- * Revision 1.44  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.43  2008/05/04 09:51:45  vfrolov
- * Implemented HiddenMode option
- *
  * Revision 1.42  2008/04/08 10:27:44  vfrolov
  * Fixed C0C_MCR_MASK
  *
@@ -197,8 +166,8 @@
 #define C0C_SERIAL_DEVICEMAP        L"SERIALCOMM"
 #define C0C_PREF_WIN32_DEVICE_NAME  L"\\DosDevices\\"
 
-#define C0C_PORT_HARDWARE_IDS_CNCCLASS C0C_PORT_DEVICE_ID L"\0" C0C_PORT_HW_ID_CNCCLASS L"\0"
-#define C0C_PORT_HARDWARE_IDS_COMCLASS C0C_PORT_DEVICE_ID L"\0" C0C_PORT_HW_ID_COMCLASS L"\0"
+#define C0C_PORT_HARDWARE_IDS       C0C_PORT_DEVICE_ID L"\0"
+#define C0C_PORT_COMPATIBLE_IDS     L"\0"
 
 #define C0C_DOTYPE_FB     ((unsigned)0xC0C1)
 #define C0C_DOTYPE_PP     ((unsigned)0xC0C2)
@@ -245,6 +214,7 @@ typedef struct _C0C_BUFFER {
   SIZE_T                  busy;
   SIZE_T                  limit;
   SIZE_T                  size80;
+  BOOLEAN                 escape;
   C0C_RAW_DATA            insertData;
 } C0C_BUFFER, *PC0C_BUFFER;
 
@@ -263,8 +233,8 @@ typedef struct _C0C_TX_BUFFER {
   UCHAR                   leastBuf[14 + 1];  /* transmitter holding and shift registers */
 } C0C_TX_BUFFER, *PC0C_TX_BUFFER;
 
-#define C0C_TX_BUFFER_EMPTY(pTxBuf) \
-  (!(pTxBuf)->busy)
+#define C0C_TX_BUFFER_BUSY(pTxBuf) \
+  ((pTxBuf)->busy)
 
 #define C0C_TX_BUFFER_THR_EMPTY(pTxBuf) \
   ((pTxBuf)->busy <= 1)
@@ -301,12 +271,10 @@ typedef struct _C0C_IO_PORT {
 
   KTIMER                  timerReadTotal;
   KDPC                    timerReadTotalDpc;
-  ULONG                   addRTTO;
 
   KTIMER                  timerReadInterval;
   KDPC                    timerReadIntervalDpc;
   LARGE_INTEGER           timeoutInterval;
-  ULONG                   addRITO;
 
   KTIMER                  timerWriteTotal;
   KDPC                    timerWriteTotalDpc;
@@ -360,23 +328,16 @@ typedef struct _C0C_IO_PORT {
   C0C_BUFFER              readBuf;
   C0C_TX_BUFFER           txBuf;
 
-  ULONG                   brokeCharsProbability;
-  short                   brokeChars;  /* number of subsequent chars that should be broken */
-  SIZE_T                  brokeIdleChars;
-
   short                   sendXonXoff;
   ULONG                   writeHolding;
   ULONG                   writeHoldingRemote;
   BOOLEAN                 sendBreak;
-  BOOLEAN                 rcvdBreak;
   BOOLEAN                 tryWrite;
 
   BOOLEAN                 isOpen;
   BOOLEAN                 emuOverrun;
   BOOLEAN                 plugInMode;
   BOOLEAN                 exclusiveMode;
-  BOOLEAN                 allDataBits;
-  BOOLEAN                 isComClass;
 } C0C_IO_PORT, *PC0C_IO_PORT;
 
 #define FDO_PORT_TO_IO_PORT(pDevObj) \
@@ -399,7 +360,7 @@ typedef struct _C0C_FDOPORT_EXTENSION {
   UNICODE_STRING          win32DeviceName;
   UNICODE_STRING          symbolicLinkName;
 
-  #define C0C_SHOW_PORTNAME   0x01
+  #define C0C_SHOW_SETNAME    0x01
   #define C0C_SHOW_SYMLINK    0x02
   #define C0C_SHOW_DEVICEMAP  0x04
   #define C0C_SHOW_INTERFACE  0x08
@@ -423,38 +384,39 @@ typedef struct _C0C_CHILD {
 typedef struct _C0C_FDOBUS_EXTENSION {
   FDO_EXTENSION
 
-  LIST_ENTRY              listEntry;
   KSPIN_LOCK              ioLock;
   C0C_CHILD               childs[2];
   ULONG                   portNum;
 } C0C_FDOBUS_EXTENSION, *PC0C_FDOBUS_EXTENSION;
 
 typedef struct _C0C_GLOBAL {
-  LIST_ENTRY listFdoBus;
-  KSPIN_LOCK listFdoBusLock;
   PDRIVER_OBJECT pDrvObj;
   UNICODE_STRING registryPath;
 } C0C_GLOBAL;
 
 extern C0C_GLOBAL c0cGlobal;
 
-DRIVER_UNLOAD c0cUnload;
-DRIVER_ADD_DEVICE c0cAddDevice;
+VOID c0cUnload(IN PDRIVER_OBJECT pDrvObj);
 
-__drv_dispatchType(IRP_MJ_CREATE)                  DRIVER_DISPATCH c0cOpen;
-__drv_dispatchType(IRP_MJ_CLOSE)                   DRIVER_DISPATCH c0cClose;
-__drv_dispatchType(IRP_MJ_CLEANUP)                 DRIVER_DISPATCH c0cCleanup;
-__drv_dispatchType(IRP_MJ_FLUSH_BUFFERS)
-__drv_dispatchType(IRP_MJ_WRITE)                   DRIVER_DISPATCH c0cWrite;
-__drv_dispatchType(IRP_MJ_READ)                    DRIVER_DISPATCH c0cRead;
-__drv_dispatchType(IRP_MJ_DEVICE_CONTROL)          DRIVER_DISPATCH c0cIoControl;
-__drv_dispatchType(IRP_MJ_INTERNAL_DEVICE_CONTROL) DRIVER_DISPATCH c0cInternalIoControl;
-__drv_dispatchType(IRP_MJ_QUERY_INFORMATION)
-__drv_dispatchType(IRP_MJ_SET_INFORMATION)         DRIVER_DISPATCH c0cFileInformation;
-__drv_dispatchType(IRP_MJ_SYSTEM_CONTROL)          DRIVER_DISPATCH c0cSystemControlDispatch;
-__drv_dispatchType(IRP_MJ_PNP)                     DRIVER_DISPATCH c0cPnpDispatch;
-__drv_dispatchType(IRP_MJ_POWER)                   DRIVER_DISPATCH c0cPowerDispatch;
+#define DeclareMajorFunction(mfunc) \
+  NTSTATUS mfunc(IN PDEVICE_OBJECT, IN PIRP)
 
+DeclareMajorFunction(c0cOpen);
+DeclareMajorFunction(c0cClose);
+DeclareMajorFunction(c0cWrite);
+DeclareMajorFunction(c0cRead);
+DeclareMajorFunction(c0cIoControl);
+DeclareMajorFunction(c0cInternalIoControl);
+DeclareMajorFunction(c0cCleanup);
+DeclareMajorFunction(c0cFileInformation);
+DeclareMajorFunction(c0cSystemControlDispatch);
+
+DeclareMajorFunction(c0cPnpDispatch);
+DeclareMajorFunction(c0cPowerDispatch);
+
+#undef DeclareMajorFunction
+
+NTSTATUS c0cAddDevice(IN PDRIVER_OBJECT  pDrvObj, IN PDEVICE_OBJECT pPhDevObj);
 VOID RemoveFdoPort(IN PC0C_FDOPORT_EXTENSION pDevExt);
 VOID RemoveFdoBus(IN PC0C_FDOBUS_EXTENSION pDevExt);
 
@@ -516,8 +478,7 @@ typedef struct _C0C_IRP_STATE {
   UCHAR                   iQueue;
 } C0C_IRP_STATE, *PC0C_IRP_STATE;
 
-#define GetIrpState(pIrp)                ((PC0C_IRP_STATE)&(pIrp)->Tail.Overlay.DriverContext[0])
-
+PC0C_IRP_STATE GetIrpState(IN PIRP pIrp);
 ULONG GetWriteLength(IN PIRP pIrp);
 
 #define C0C_IO_TYPE_CLOSE_COMPLETE     2
@@ -556,12 +517,6 @@ VOID PinMap(
     IN ULONG pinDSR,
     IN ULONG pinDCD,
     IN ULONG pinRI);
-
-VOID InsertLsrMst(
-    PC0C_IO_PORT pIoPortRead,
-    BOOLEAN isMST,
-    UCHAR value,
-    PLIST_ENTRY pQueueToComplete);
 
 VOID InsertRemoteBr(
     PC0C_IO_PORT pIoPortRead,

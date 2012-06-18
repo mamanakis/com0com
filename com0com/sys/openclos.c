@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2011 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,21 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.26  2011/07/26 16:07:42  vfrolov
- * Fixed double closing
- *
- * Revision 1.25  2008/12/02 16:10:09  vfrolov
- * Separated tracing and debuging
- *
- * Revision 1.24  2008/07/11 10:38:00  vfrolov
- * Added nonstandard ability to enable LSR insertion on BREAK OFF
- *
- * Revision 1.23  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.22  2008/04/08 10:30:35  vfrolov
- * Fixed modem control setting on close
- *
  * Revision 1.21  2008/03/14 15:28:39  vfrolov
  * Implemented ability to get paired port settings with
  * extended IOCTL_SERIAL_LSRMST_INSERT
@@ -111,7 +96,6 @@
 #include "bufutils.h"
 #include "strutils.h"
 #include "timeout.h"
-#include "delay.h"
 
 NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
 {
@@ -123,7 +107,6 @@ NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
 
   if (InterlockedIncrement(&pDevExt->openCount) != 1) {
     InterlockedDecrement(&pDevExt->openCount);
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"FdoPortOpen ACCESS_DENIED (openCount > 0)");
     return STATUS_ACCESS_DENIED;
   }
 
@@ -131,7 +114,6 @@ NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
 
   if (pIoPort->plugInMode && !pIoPort->pIoPortRemote->isOpen) {
     InterlockedDecrement(&pDevExt->openCount);
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"FdoPortOpen ACCESS_DENIED (plugInMode && !pIoPortRemote->isOpen)");
     return STATUS_ACCESS_DENIED;
   }
 
@@ -161,7 +143,7 @@ NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
 
   InitializeListHead(&queueToComplete);
 
-#if ENABLE_TRACING
+#if DBG
   if (pIoPort->amountInWriteQueue) {
     NTSTATUS status;
     UNICODE_STRING msg;
@@ -175,7 +157,7 @@ NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
 
     StrFree(&msg);
   }
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   KeAcquireSpinLock(pIoPort->pIoLock, &oldIrql);
 
@@ -189,18 +171,9 @@ NTSTATUS FdoPortOpen(IN PC0C_FDOPORT_EXTENSION pDevExt)
   RtlZeroMemory(&pIoPort->perfStats, sizeof(pIoPort->perfStats));
   pIoPort->handFlow.XoffLimit = size >> 3;
   pIoPort->handFlow.XonLimit = size >> 1;
-  pIoPort->pIoPortRemote->brokeIdleChars = 0;
 
   SetHandFlow(pIoPort, NULL, &queueToComplete);
   SetModemControl(pIoPort, C0C_MCR_OPEN, C0C_MCR_OPEN, &queueToComplete);
-
-  ReadWrite(
-      pIoPort, FALSE,
-      pIoPort->pIoPortRemote, FALSE,
-      &queueToComplete);
-
-  if (pIoPort->pIoPortRemote->pWriteDelay && pIoPort->pIoPortRemote->brokeCharsProbability > 0)
-    StartWriteDelayTimer(pIoPort->pIoPortRemote->pWriteDelay);
 
   KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
 
@@ -244,23 +217,7 @@ NTSTATUS FdoPortClose(IN PC0C_FDOPORT_EXTENSION pDevExt, IN PIRP pIrp)
 
   pIoPort = pDevExt->pIoPortLocal;
 
-  KeAcquireSpinLock(pIoPort->pIoLock, &oldIrql);
-
-  if (!pIoPort->isOpen) {
-    KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
-
-    Trace0((PC0C_COMMON_EXTENSION)pDevExt, L"FdoPortClose INVALID_DEVICE_REQUEST (!isOpen)");
-
-    pIrp->IoStatus.Information = 0;
-    pIrp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
-    IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-
-    return STATUS_INVALID_DEVICE_REQUEST;
-  }
-
   pIoPort->isOpen = FALSE;
-
-  KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
 
   if (pIoPort->pIoPortRemote->plugInMode)
     IoInvalidateDeviceRelations(pIoPort->pIoPortRemote->pPhDevObj, BusRelations);
@@ -274,7 +231,7 @@ NTSTATUS FdoPortClose(IN PC0C_FDOPORT_EXTENSION pDevExt, IN PIRP pIrp)
   pIoPort->sendXonXoff = 0;
   SetModemControl(pIoPort, C0C_MCR_OUT2, C0C_MCR_MASK | C0C_MCR_OPEN, &queueToComplete);
   FreeBuffer(&pIoPort->readBuf);
-  SetBreakHolding(pIoPort, FALSE, &queueToComplete);
+  SetBreakHolding(pIoPort, FALSE);
 
   KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);
 
@@ -307,10 +264,10 @@ NTSTATUS c0cOpen(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
 
   pIrp->IoStatus.Information = 0;
 
-#if ENABLE_TRACING
+#if DBG
   if (!NT_SUCCESS(status))
     TraceIrp("c0cOpen", pIrp, &status, TRACE_FLAG_RESULTS);
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   pIrp->IoStatus.Status = status;
   IoCompleteRequest(pIrp, IO_NO_INCREMENT);
@@ -323,9 +280,9 @@ NTSTATUS c0cClose(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
   NTSTATUS status;
   PC0C_COMMON_EXTENSION pDevExt = pDevObj->DeviceExtension;
 
-#if ENABLE_TRACING
+#if DBG
   ULONG code = IoGetCurrentIrpStackLocation(pIrp)->MajorFunction;
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   TraceIrp("--- Close ---", pIrp, NULL, TRACE_FLAG_PARAMS);
 
@@ -340,10 +297,10 @@ NTSTATUS c0cClose(IN PDEVICE_OBJECT pDevObj, IN PIRP pIrp)
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
   }
 
-#if ENABLE_TRACING
+#if DBG
   if (status != STATUS_SUCCESS)
     TraceCode(pDevExt, "IRP_MJ_", codeNameTableIrpMj, code, &status);
-#endif /* ENABLE_TRACING */
+#endif /* DBG */
 
   return status;
 }

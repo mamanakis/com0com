@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2004-2010 Vyacheslav Frolov
+ * Copyright (c) 2004-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.11  2008/09/17 07:58:32  vfrolov
- * Added AddRTTO and AddRITO parameters
- *
- * Revision 1.10  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
  * Revision 1.9  2007/06/04 15:24:33  vfrolov
  * Fixed open reject just after close in exclusiveMode
  *
@@ -53,6 +46,7 @@
  *
  * Revision 1.1  2005/01/26 12:18:54  vfrolov
  * Initial revision
+ *
  *
  */
 
@@ -156,7 +150,7 @@ NTSTATUS SetReadTimeout(PC0C_IO_PORT pIoPort, PIRP pIrp)
       pState->flags |= C0C_IRP_FLAG_INTERVAL_TIMEOUT;
 
       pIoPort->timeoutInterval.QuadPart =
-          ((LONGLONG)timeouts.ReadIntervalTimeout + pIoPort->addRITO) * -10000;
+          ((LONGLONG)timeouts.ReadIntervalTimeout) * -10000;
 
       if (pIrp->IoStatus.Information)
         SetIntervalTimeout(pIoPort);
@@ -169,8 +163,7 @@ NTSTATUS SetReadTimeout(PC0C_IO_PORT pIoPort, PIRP pIrp)
 
     length = IoGetCurrentIrpStackLocation(pIrp)->Parameters.Read.Length;
 
-    total.QuadPart = ((LONGLONG)(
-        UInt32x32To64(length, multiplier) + constant + pIoPort->addRTTO)) * -10000;
+    total.QuadPart = ((LONGLONG)(UInt32x32To64(length, multiplier) + constant)) * -10000;
 
     KeSetTimer(
         &pIoPort->timerReadTotal,
@@ -240,82 +233,62 @@ VOID SetXoffCounterTimeout(
   }
 }
 
-KDEFERRED_ROUTINE TimeoutReadTotal;
 VOID TimeoutReadTotal(
     IN PKDPC pDpc,
     IN PVOID deferredContext,
     IN PVOID systemArgument1,
     IN PVOID systemArgument2)
 {
-  PC0C_IO_PORT pIoPort;
+  PC0C_IO_PORT pIoPort = (PC0C_IO_PORT)deferredContext;
 
   UNREFERENCED_PARAMETER(pDpc);
   UNREFERENCED_PARAMETER(systemArgument1);
   UNREFERENCED_PARAMETER(systemArgument2);
 
-  HALT_UNLESS(deferredContext != NULL);
-
-  pIoPort = (PC0C_IO_PORT)deferredContext;
-
   TimeoutRoutine(pIoPort, &pIoPort->irpQueues[C0C_QUEUE_READ]);
 }
 
-KDEFERRED_ROUTINE TimeoutReadInterval;
 VOID TimeoutReadInterval(
     IN PKDPC pDpc,
     IN PVOID deferredContext,
     IN PVOID systemArgument1,
     IN PVOID systemArgument2)
 {
-  PC0C_IO_PORT pIoPort;
+  PC0C_IO_PORT pIoPort = (PC0C_IO_PORT)deferredContext;
 
   UNREFERENCED_PARAMETER(pDpc);
   UNREFERENCED_PARAMETER(systemArgument1);
   UNREFERENCED_PARAMETER(systemArgument2);
 
-  HALT_UNLESS(deferredContext != NULL);
-
-  pIoPort = (PC0C_IO_PORT)deferredContext;
-
   TimeoutRoutine(pIoPort, &pIoPort->irpQueues[C0C_QUEUE_READ]);
 }
 
-KDEFERRED_ROUTINE TimeoutWriteTotal;
 VOID TimeoutWriteTotal(
     IN PKDPC pDpc,
     IN PVOID deferredContext,
     IN PVOID systemArgument1,
     IN PVOID systemArgument2)
 {
-  PC0C_IO_PORT pIoPort;
+  PC0C_IO_PORT pIoPort = (PC0C_IO_PORT)deferredContext;
 
   UNREFERENCED_PARAMETER(pDpc);
   UNREFERENCED_PARAMETER(systemArgument1);
   UNREFERENCED_PARAMETER(systemArgument2);
 
-  HALT_UNLESS(deferredContext != NULL);
-
-  pIoPort = (PC0C_IO_PORT)deferredContext;
-
   TimeoutRoutine(pIoPort, &pIoPort->irpQueues[C0C_QUEUE_WRITE]);
 }
 
-KDEFERRED_ROUTINE TimeoutClose;
 VOID TimeoutClose(
     IN PKDPC pDpc,
     IN PVOID deferredContext,
     IN PVOID systemArgument1,
     IN PVOID systemArgument2)
 {
-  PC0C_IO_PORT pIoPort;
+  PC0C_IO_PORT pIoPort = (PC0C_IO_PORT)deferredContext;
 
   UNREFERENCED_PARAMETER(pDpc);
   UNREFERENCED_PARAMETER(systemArgument1);
   UNREFERENCED_PARAMETER(systemArgument2);
-
-  HALT_UNLESS(deferredContext != NULL);
-
-  pIoPort = (PC0C_IO_PORT)deferredContext;
 
   TimeoutRoutine(pIoPort, &pIoPort->irpQueues[C0C_QUEUE_CLOSE]);
 }

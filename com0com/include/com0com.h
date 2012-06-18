@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2011 Vyacheslav Frolov
+ * Copyright (c) 2006-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,29 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
+ *
+ * $Log$
+ * Revision 1.7  2008/04/08 06:44:35  vfrolov
+ * Added pin OUT2
+ *
+ * Revision 1.6  2007/10/19 15:58:18  vfrolov
+ * Added default values
+ *
+ * Revision 1.5  2007/09/17 14:28:07  vfrolov
+ * Implemented pseudo pin OPEN
+ *
+ * Revision 1.4  2007/07/03 14:25:12  vfrolov
+ * Implemented pinout customization
+ *
+ * Revision 1.3  2006/11/03 13:06:33  vfrolov
+ * Moved C0C_PORT_NAME_LEN from sys/com0com.h to include/com0com.h
+ *
+ * Revision 1.2  2006/11/02 15:56:38  vfrolov
+ * Defined C0C_REGSTR_VAL_PORT_NUM
+ *
+ * Revision 1.1  2006/10/13 10:06:13  vfrolov
+ * Initial revision
+ *
  */
 
 #ifndef _INCLUDE_C0C_COM0COM_H_
@@ -24,8 +47,6 @@
 
 #define C0C_BUS_DEVICE_ID           TEXT_PREF"root\\com0com"
 #define C0C_PORT_DEVICE_ID          TEXT_PREF"com0com\\port"
-#define C0C_PORT_HW_ID_CNCCLASS     TEXT_PREF"com0com\\cncport"
-#define C0C_PORT_HW_ID_COMCLASS     TEXT_PREF"com0com\\comport"
 #define C0C_SERVICE                 TEXT_PREF"com0com"
 #define C0C_PREF_NT_DEVICE_NAME     TEXT_PREF"\\Device\\"
 
@@ -35,7 +56,6 @@
 #define C0C_PREF_PORT_NAME_B        TEXT_PREF"CNCB"
 #define C0C_PREF_DEVICE_NAME_A      C0C_PREF_NT_DEVICE_NAME C0C_SERVICE TEXT_PREF"1"
 #define C0C_PREF_DEVICE_NAME_B      C0C_PREF_NT_DEVICE_NAME C0C_SERVICE TEXT_PREF"2"
-#define C0C_PORT_NAME_COMCLASS      TEXT_PREF"COM#"
 
 #define C0C_REGSTR_VAL_PORT_NUM     TEXT_PREF"PortNum"
 
@@ -62,11 +82,5 @@
 #define C0C_DEFAULT_PLUGINMODE      0x00000000
 #define C0C_DEFAULT_EXCLUSIVEMODE   0x00000000
 #define C0C_DEFAULT_HIDDENMODE      0x00000000
-#define C0C_DEFAULT_ALLDATABITS     0x00000000
-#define C0C_DEFAULT_EMUNOISE        0x00000000
-#define C0C_DEFAULT_ADDRTTO         0x00000000
-#define C0C_DEFAULT_ADDRITO         0x00000000
-
-#define C0C_PROBABILITY_ONE         100000000
 
 #endif /* _INCLUDE_C0C_COM0COM_H_ */

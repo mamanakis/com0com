@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2010 Vyacheslav Frolov
+ * Copyright (c) 2005-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,13 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.11  2008/06/26 13:37:10  vfrolov
- * Implemented noise emulation
- *
- * Revision 1.10  2008/03/14 15:28:39  vfrolov
- * Implemented ability to get paired port settings with
- * extended IOCTL_SERIAL_LSRMST_INSERT
- *
  * Revision 1.9  2007/07/20 07:59:20  vfrolov
  * Fixed idleCount
  *
@@ -59,18 +52,17 @@
  * Revision 1.1  2005/08/23 15:30:22  vfrolov
  * Initial revision
  *
+ *
  */
 
 #include "precomp.h"
 #include "delay.h"
-#include "noise.h"
 
 /*
  * FILE_ID used by HALT_UNLESS to put it on BSOD
  */
 #define FILE_ID 7
 
-KDEFERRED_ROUTINE WriteDelayRoutine;
 VOID WriteDelayRoutine(
     IN PKDPC pDpc,
     IN PVOID deferredContext,
@@ -83,8 +75,6 @@ VOID WriteDelayRoutine(
   UNREFERENCED_PARAMETER(pDpc);
   UNREFERENCED_PARAMETER(systemArgument1);
   UNREFERENCED_PARAMETER(systemArgument2);
-
-  HALT_UNLESS(deferredContext != NULL);
 
   pIoPort = (PC0C_IO_PORT)deferredContext;
   pWriteDelay = pIoPort->pWriteDelay;
@@ -105,24 +95,8 @@ VOID WriteDelayRoutine(
           pIoPort, FALSE,
           &queueToComplete);
 
-      if (pWriteDelay->idleCount > 3) {
-        if (pIoPort->brokeCharsProbability > 0 && pIoPort->pIoPortRemote->isOpen) {
-          SIZE_T idleChars = GetWriteLimit(pWriteDelay);
-
-          pWriteDelay->idleCount = 0;
-          pIoPort->brokeIdleChars += GetBrokenChars(pIoPort->brokeCharsProbability, idleChars);
-          pWriteDelay->sentFrames += idleChars;
-
-          if (pIoPort->brokeIdleChars > 0) {
-            ReadWrite(
-                pIoPort->pIoPortRemote, FALSE,
-                pIoPort, FALSE,
-                &queueToComplete);
-          }
-        } else {
+      if (pWriteDelay->idleCount > 3)
           StopWriteDelayTimer(pWriteDelay);
-        }
-      }
     }
 
     KeReleaseSpinLock(pIoPort->pIoLock, oldIrql);

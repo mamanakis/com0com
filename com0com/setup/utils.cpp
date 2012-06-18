@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2006-2011 Vyacheslav Frolov
+ * Copyright (c) 2006-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,18 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.9  2010/07/30 09:15:04  vfrolov
- * Added STRDUP()
- *
- * Revision 1.8  2008/12/25 16:56:25  vfrolov
- * Added MatchPattern()
- *
- * Revision 1.7  2008/12/24 15:22:44  vfrolov
- * Added BusyMask::Clear() and BusyMask::DelNum()
- *
- * Revision 1.6  2007/09/20 12:37:06  vfrolov
- * Added SetLastError(ERROR_NOT_ENOUGH_MEMORY)
- *
  * Revision 1.5  2007/05/29 15:22:00  vfrolov
  * Fixed buffer overflow
  *
@@ -51,7 +39,6 @@
 
 #include "precomp.h"
 #include "utils.h"
-#include "msg.h"
 
 ///////////////////////////////////////////////////////////////
 int VSNPRINTF(char *pBuf, int size, const char *pFmt, va_list va)
@@ -81,7 +68,7 @@ int SNPRINTF(char *pBuf, int size, const char *pFmt, ...)
   return res1;
 }
 ///////////////////////////////////////////////////////////////
-static bool IsDelim(char c, const char *pDelims)
+static BOOL IsDelim(char c, const char *pDelims)
 {
   while (*pDelims) {
     if (c == *pDelims++)
@@ -117,9 +104,9 @@ char *STRTOK_R(char *pStr, const char *pDelims, char **ppSave)
   return pToken;
 }
 ///////////////////////////////////////////////////////////////
-bool StrToInt(const char *pStr, int *pNum)
+BOOL StrToInt(const char *pStr, int *pNum)
 {
-  bool res = FALSE;
+  BOOL res = FALSE;
   int num;
   int sign = 1;
 
@@ -160,66 +147,13 @@ bool StrToInt(const char *pStr, int *pNum)
   return res;
 }
 ///////////////////////////////////////////////////////////////
-bool MatchPattern(const char *pPattern, const char *pStr)
+BusyMask::~BusyMask()
 {
-  for (;;) {
-    switch (*pPattern) {
-      case '*':
-        pPattern++;
-        do {
-          if (MatchPattern(pPattern, pStr))
-            return TRUE;
-        } while (*pStr++);
-
-        return FALSE;
-      case '?':
-        if (!*pStr)
-          return FALSE;
-
-        pStr++;
-        pPattern++;
-        break;
-      default:
-        if (*pPattern != *pStr)
-          return FALSE;
-
-        if (!*pStr)
-          return TRUE;
-
-        pStr++;
-        pPattern++;
-    }
-  }
-}
-///////////////////////////////////////////////////////////////
-char *STRDUP(const char *pSrcStr, bool showErrors)
-{
-  char *pDstStr;
-  int len = lstrlen(pSrcStr) + 1;
-
-  pDstStr = (char *)LocalAlloc(LPTR, len*sizeof(pDstStr[0]));
-
-  if (pDstStr != NULL) {
-    SNPRINTF(pDstStr, len, "%s", pSrcStr);
-  } else {
-    SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-    if (showErrors)
-      ShowLastError(MB_OK|MB_ICONSTOP, "LocalAlloc(%lu)", (unsigned long)(len*sizeof(pDstStr[0])));
-  }
-
-  return pDstStr;
-}
-///////////////////////////////////////////////////////////////
-void BusyMask::Clear()
-{
-  if (pBusyMask) {
+  if (pBusyMask)
     LocalFree(pBusyMask);
-    pBusyMask = NULL;
-    busyMaskLen = 0;
-  }
 }
 
-bool BusyMask::AddNum(int num)
+BOOL BusyMask::AddNum(int num)
 {
   ULONG maskNum = num/(sizeof(*pBusyMask)*8);
 
@@ -248,19 +182,7 @@ bool BusyMask::AddNum(int num)
   return TRUE;
 }
 
-void BusyMask::DelNum(int num)
-{
-  ULONG maskNum = num/(sizeof(*pBusyMask)*8);
-
-  if (maskNum >= busyMaskLen)
-    return;
-
-  ULONG mask = 1 << (num%(sizeof(*pBusyMask)*8));
-
-  pBusyMask[maskNum] &= ~mask;
-}
-
-bool BusyMask::IsFreeNum(int num) const
+BOOL BusyMask::IsFreeNum(int num) const
 {
   ULONG maskNum = num/(sizeof(*pBusyMask)*8);
 
