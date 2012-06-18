@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2008 Vyacheslav Frolov
+ * Copyright (c) 2005-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,16 +19,6 @@
  *
  *
  * $Log$
- * Revision 1.7  2008/02/08 16:40:56  vfrolov
- * Protected SendRaw() and WriteRaw() Protocol's methods
- *
- * Revision 1.6  2007/07/20 09:23:48  vfrolov
- * Added virtual ~Protocol()
- * Thanks to wurfholz
- *
- * Revision 1.5  2006/11/16 12:51:43  vfrolov
- * Added ability to set COM port parameters
- *
  * Revision 1.4  2005/10/03 13:44:17  vfrolov
  * Added Clean() method
  *
@@ -109,23 +99,19 @@ class Protocol
   public:
     Protocol(int _thresholdSend = 0, int _thresholdWrite = 0)
       : streamSendRead(_thresholdSend), streamWriteRecv(_thresholdWrite) {}
-    virtual ~Protocol() {}
 
     virtual int Send(const void *pBuf, int count);
+    int SendRaw(const void *pBuf, int count) { return streamSendRead.PutData(pBuf, count); }
     void SendEof() { streamSendRead.PutEof(); }
     BOOL isSendFull() const { return streamSendRead.isFull(); }
     int Read(void *pBuf, int count) { return streamSendRead.GetData(pBuf, count); }
 
     virtual int Write(const void *pBuf, int count);
+    int WriteRaw(const void *pBuf, int count) { return streamWriteRecv.PutData(pBuf, count); }
     void WriteEof() { streamWriteRecv.PutEof(); }
     BOOL isWriteFull() const { return streamWriteRecv.isFull(); }
     int Recv(void *pBuf, int count) { return streamWriteRecv.GetData(pBuf, count); }
-
     virtual void Clean();
-
-  protected:
-    int SendRaw(const void *pBuf, int count) { return streamSendRead.PutData(pBuf, count); }
-    int WriteRaw(const void *pBuf, int count) { return streamWriteRecv.PutData(pBuf, count); }
 
   private:
     DataStream streamSendRead;
@@ -142,7 +128,6 @@ class ComParams
     BOOL SetParity(const char *pParity);
     BOOL SetStopBits(const char *pStopBits);
     void SetIgnoreDSR(BOOL val) { ignoreDSR = val; }
-    void SetConnectDTR(BOOL val) { connectDTR = val; }
 
     static const char *ParityStr(int parity);
     static const char *StopBitsStr(int stopBits);
@@ -157,7 +142,6 @@ class ComParams
     int Parity() const { return parity; }
     int StopBits() const { return stopBits; }
     BOOL IgnoreDSR() const { return ignoreDSR; }
-    BOOL ConnectDTR() const { return connectDTR; }
 
   private:
     long baudRate;
@@ -165,7 +149,6 @@ class ComParams
     int parity;
     int stopBits;
     BOOL ignoreDSR;
-    BOOL connectDTR;
 };
 ///////////////////////////////////////////////////////////////
 
