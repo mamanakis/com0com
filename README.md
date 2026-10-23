@@ -1,2 +1,4 @@
 # com0com
-This repository serves as a direct, unmodified Git archive of the legacy com0com project originally hosted on SourceForge. The migration was performed using cvs2git to ensure absolute fidelity of the original version control history, successfully preserving all legacy tags and branches in the modern Git architecture. No post-migration code modifications, formatting changes, or modernizations have been applied to this baseline.
+## Repository Structure
+* **`main`**: The active development branch containing custom modifications, fixes, and modernizations.
+* **`master`**: The unmodified historical baseline. This branch is a direct, untouched archive of the original SourceForge repository, migrated via cvs2git to preserve all legacy tags and commits.
