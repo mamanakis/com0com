@@ -1,2 +1,2 @@
 # com0com
-An unmodified Git import of the original SourceForge com0com repository, converted using cvs2git to fully preserve all historical commits, branches, and tags.
+This repository serves as a direct, unmodified Git archive of the legacy com0com project originally hosted on SourceForge. The migration was performed using cvs2git to ensure absolute fidelity of the original version control history, successfully preserving all legacy tags and branches in the modern Git architecture. No post-migration code modifications, formatting changes, or modernizations have been applied to this baseline.
